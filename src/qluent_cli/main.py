@@ -54,6 +54,7 @@ questions about business performance, revenue drivers, cost breakdowns, and tren
 ```bash
 qluent trees list                                           # List available metric trees
 qluent trees get <tree_id>                                  # Show tree hierarchy
+qluent trees validate <tree_id>                             # Validate tree SQL contracts and dimensions
 qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
 qluent trees evaluate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD
 qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
@@ -85,14 +86,21 @@ qluent trees evaluate revenue --period "last week"
 The Shapley attribution tells you WHICH sub-metric drove the change and by how much.
 Focus on the top contributors — they explain where the delta came from.
 
-### Step 3: Run deterministic root cause analysis with `rca analyze`
+### Step 3: Validate segment contracts with `trees validate`
+```bash
+qluent trees validate revenue
+```
+Use this before relying on segment RCA. A tree should explicitly project its execution columns
+and declared dimensions at every leaf node.
+
+### Step 4: Run deterministic root cause analysis with `rca analyze`
 ```bash
 qluent rca analyze revenue --period "last week"
 ```
 This traverses the tree and, when dimensions are available, cuts suspect nodes by segment
 to surface where the movement is concentrated.
 
-### Step 4: Cross-reference with `compare`
+### Step 5: Cross-reference with `compare`
 ```bash
 qluent trees compare revenue order_volume --period "last week"
 ```

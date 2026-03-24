@@ -36,6 +36,14 @@ class QluentClient:
         resp.raise_for_status()
         return resp.json()
 
+    def validate_tree(self, tree_id: str) -> dict[str, Any]:
+        resp = self._client.get(
+            f"{self._base}/metric-trees/{tree_id}/validate/",
+            params={"user_email": self._config.user_email},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def evaluate_tree(
         self,
         tree_id: str,

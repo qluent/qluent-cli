@@ -15,6 +15,7 @@ from qluent_cli.formatters import (
     format_trend,
     format_tree_detail,
     format_tree_list,
+    format_tree_validation,
 )
 
 
@@ -48,6 +49,20 @@ def get(tree_id: str, as_json: bool) -> None:
         click.echo(json.dumps(data, indent=2))
     else:
         click.echo(format_tree_detail(data))
+
+
+@trees.command()
+@click.argument("tree_id")
+@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+def validate(tree_id: str, as_json: bool) -> None:
+    """Validate a saved metric tree against its referenced metric SQL."""
+    client = QluentClient(load_config())
+    data = client.validate_tree(tree_id)
+
+    if as_json:
+        click.echo(json.dumps(data, indent=2))
+    else:
+        click.echo(format_tree_validation(data))
 
 
 @trees.command()

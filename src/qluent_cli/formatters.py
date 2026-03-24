@@ -258,6 +258,60 @@ def format_root_cause(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def format_tree_validation(data: dict[str, Any]) -> str:
+    """Format metric tree contract validation results."""
+    status = "valid" if data.get("valid") else "invalid"
+    lines = [
+        f"{data['tree_label']} Validation",
+        "",
+        f"  Status: {status}",
+    ]
+
+    declared_dimensions = data.get("dimensions_declared", [])
+    supported_dimensions = data.get("supported_dimensions", [])
+    if declared_dimensions:
+        lines.append(f"  Declared dimensions: {', '.join(declared_dimensions)}")
+        lines.append(
+            "  Supported dimensions: "
+            + (", ".join(supported_dimensions) if supported_dimensions else "none")
+        )
+
+    leaf_nodes = data.get("leaf_nodes", [])
+    if leaf_nodes:
+        lines.append("")
+        lines.append("  Leaf nodes:")
+        for leaf in leaf_nodes:
+            summary = (
+                f"    {leaf['label']} ({leaf['node_id']})"
+                f" [metric {leaf.get('metric_id')}]"
+                f" [{leaf.get('projection_status', 'explicit')}]"
+            )
+            lines.append(summary)
+            projected_columns = leaf.get("projected_columns", [])
+            if projected_columns:
+                lines.append(f"      columns: {', '.join(projected_columns)}")
+            if leaf.get("missing_columns"):
+                lines.append(f"      missing columns: {', '.join(leaf['missing_columns'])}")
+            if leaf.get("missing_dimensions"):
+                lines.append(f"      missing dimensions: {', '.join(leaf['missing_dimensions'])}")
+
+    errors = data.get("errors", [])
+    if errors:
+        lines.append("")
+        lines.append("  Errors:")
+        for error in errors:
+            lines.append(f"    ! {error}")
+
+    warnings = data.get("warnings", [])
+    if warnings:
+        lines.append("")
+        lines.append("  Warnings:")
+        for warning in warnings:
+            lines.append(f"    ! {warning}")
+
+    return "\n".join(lines)
+
+
 def _classify_trend(ratios: list[float | None]) -> str:
     """Classify a series of delta ratios into a trend label."""
     valid = [r for r in ratios if r is not None]

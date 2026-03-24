@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import date as dt_date
 from typing import Any
 
@@ -12,8 +13,12 @@ def _fmt_num(value: float, signed: bool = False) -> str:
         formatted = f"{abs(value):,.0f}"
     else:
         formatted = f"{abs(value):,.2f}"
-    prefix = "+" if value >= 0 else "-"
-    return f"{prefix}{formatted}" if signed else formatted
+    if signed:
+        prefix = "+" if value >= 0 else "-"
+        return f"{prefix}{formatted}"
+    if value < 0:
+        return f"-{formatted}"
+    return formatted
 
 
 def _fmt_pct(ratio: float | None) -> str:
@@ -30,7 +35,8 @@ def _fmt_share(share: float | None) -> str:
 
 def _fmt_date(d: str) -> str:
     """Format ISO date as short form: Mar 10."""
-    return dt_date.fromisoformat(d).strftime("%b %-d")
+    parsed = dt_date.fromisoformat(d)
+    return f"{parsed:%b} {parsed.day}"
 
 
 def format_period_label(c_from: str, c_to: str, p_from: str, p_to: str) -> str:
@@ -138,7 +144,82 @@ def format_evaluation(data: dict[str, Any]) -> str:
     if warnings:
         lines.append("")
         for w in warnings:
-            lines.append(f"  ⚠ {w}")
+            lines.append(f"  ! {w}")
+
+    return "\n".join(lines)
+
+
+def format_root_cause(data: dict[str, Any]) -> str:
+    """Format root-cause analysis results for human consumption."""
+    cw = data["current_window"]
+    pw = data["comparison_window"]
+    lines = [
+        (
+            f"{data['tree_label']} RCA — "
+            f"{_fmt_date(cw['date_from'])}–{_fmt_date(cw['date_to'])} vs "
+            f"{_fmt_date(pw['date_from'])}–{_fmt_date(pw['date_to'])}"
+        ),
+        "",
+        (
+            f"  {data['tree_label']}: {_fmt_num(data['comparison_value'])} → {_fmt_num(data['current_value'])}  "
+            f"Δ {_fmt_num(data['delta_value'], signed=True)} ({_fmt_pct(data.get('delta_ratio'))})"
+        ),
+    ]
+
+    if data.get("dimensions_considered"):
+        lines.append(f"  Segment cuts: {', '.join(data['dimensions_considered'])}")
+
+    findings = data.get("findings", [])
+    if findings:
+        lines.append("")
+        lines.append("  Findings:")
+        for finding in findings:
+            indent = "    " + ("  " * finding.get("depth", 0))
+            summary = (
+                f"{finding['label']}: Δ {_fmt_num(finding['delta_value'], signed=True)} "
+                f"({_fmt_pct(finding.get('delta_ratio'))})"
+            )
+            if finding.get("contribution_value") is not None:
+                summary += (
+                    f" | parent contribution {_fmt_num(finding['contribution_value'], signed=True)}"
+                )
+                if finding.get("contribution_share") is not None:
+                    summary += f" ({_fmt_share(finding['contribution_share'])})"
+            lines.append(f"{indent}{summary}")
+
+            direct_contributors = finding.get("direct_contributors", [])
+            if direct_contributors:
+                driver_parts = []
+                for contributor in direct_contributors:
+                    part = f"{contributor['label']} {_fmt_num(contributor['delta_value'], signed=True)}"
+                    if contributor.get("delta_share") is not None:
+                        part += f" ({_fmt_share(contributor['delta_share'])})"
+                    driver_parts.append(part)
+                lines.append(f"{indent}  child drivers: " + ", ".join(driver_parts))
+
+            segment_dimension = finding.get("segment_dimension")
+            segment_findings = finding.get("segment_findings", [])
+            if segment_dimension and segment_findings:
+                segment_parts = []
+                for segment in segment_findings[:3]:
+                    part = (
+                        f"{segment['segment']} {_fmt_num(segment['delta_value'], signed=True)}"
+                    )
+                    if segment.get("share_of_change") is not None:
+                        part += f" ({_fmt_share(segment['share_of_change'])})"
+                    else:
+                        part += f" ({_fmt_pct(segment.get('delta_ratio'))})"
+                    segment_parts.append(part)
+                lines.append(
+                    f"{indent}  best segment cut: {segment_dimension} -> " + ", ".join(segment_parts)
+                )
+
+    warnings = data.get("warnings", [])
+    if warnings:
+        lines.append("")
+        lines.append("  Warnings:")
+        for warning in warnings:
+            lines.append(f"    ! {warning}")
 
     return "\n".join(lines)
 
@@ -223,9 +304,8 @@ def format_trend(tree_label: str, evaluations: list[dict], grain: str) -> str:
 def format_comparison(tree_results: list[tuple[str, dict]], period_label: str) -> str:
     """Format side-by-side comparison of multiple trees for the same period.
 
-    Matches nodes by position in the tree (index), not by ID, since trees with
-    the same channel structure (e.g., Revenue vs Order Volume) use different IDs
-    but share the same hierarchical shape.
+    Matches nodes by structural path and only shows a value when the labels line
+    up at that path. This avoids silently comparing unrelated nodes.
     """
     if not tree_results:
         return "No data."
@@ -233,27 +313,37 @@ def format_comparison(tree_results: list[tuple[str, dict]], period_label: str) -
     tree_labels = [label for label, _ in tree_results]
     header = " vs ".join(tree_labels) + f" — {period_label}"
 
-    # Use the tree with the most nodes as the row basis
-    max_nodes = 0
-    base_idx = 0
-    for i, (_, data) in enumerate(tree_results):
-        n = len(data.get("nodes", []))
-        if n > max_nodes:
-            max_nodes = n
-            base_idx = i
+    def normalize_label(label: str) -> str:
+        return re.sub(r"[^a-z0-9]+", "", label.lower())
 
-    _, base_data = tree_results[base_idx]
-    base_nodes = base_data.get("nodes", [])
-    row_labels = [nd["label"] for nd in base_nodes]
-
-    # Build ratio list per tree by position index
-    tree_ratio_lists: list[list[float | None]] = []
-    for _, data in tree_results:
+    def enumerate_paths(data: dict[str, Any]) -> list[tuple[tuple[int, ...], str, dict[str, Any]]]:
         nodes = data.get("nodes", [])
-        tree_ratio_lists.append([
-            nodes[i].get("delta_ratio") if i < len(nodes) else None
-            for i in range(max_nodes)
-        ])
+        if not nodes:
+            return []
+        nodes_by_id = {node["id"]: node for node in nodes}
+        root_id = data.get("root_node_id") or nodes[0]["id"]
+        rows: list[tuple[tuple[int, ...], str, dict[str, Any]]] = []
+
+        def walk(node_id: str, path: tuple[int, ...]) -> None:
+            node = nodes_by_id.get(node_id)
+            if not node:
+                return
+            rows.append((path, node["label"], node))
+            for index, child_id in enumerate(node.get("children", [])):
+                walk(child_id, (*path, index))
+
+        walk(root_id, ())
+        return rows
+
+    base_paths = enumerate_paths(tree_results[0][1])
+    tree_path_maps = []
+    for _, data in tree_results:
+        tree_path_maps.append({
+            path: node
+            for path, _label, node in enumerate_paths(data)
+        })
+
+    row_labels = [label for _path, label, _node in base_paths]
 
     # Format
     max_label_len = max(len(la) for la in row_labels) if row_labels else 0
@@ -264,12 +354,23 @@ def format_comparison(tree_results: list[tuple[str, dict]], period_label: str) -
     col_header = " " * (max_label_len + 4) + "".join(la.rjust(col_width) for la in tree_labels)
     lines.append(col_header)
 
-    for i, label in enumerate(row_labels):
+    for path, label, _base_node in base_paths:
         padded = label.ljust(max_label_len)
         cells = ""
-        for ratios in tree_ratio_lists:
-            r = ratios[i] if i < len(ratios) else None
-            cells += _fmt_pct(r).rjust(col_width) if r is not None else "—".rjust(col_width)
+        base_label_key = normalize_label(label)
+        for path_map in tree_path_maps:
+            candidate = path_map.get(path)
+            if candidate is None:
+                cells += "—".rjust(col_width)
+                continue
+
+            candidate_label_key = normalize_label(candidate["label"])
+            if path and candidate_label_key != base_label_key:
+                cells += "—".rjust(col_width)
+                continue
+
+            ratio = candidate.get("delta_ratio")
+            cells += _fmt_pct(ratio).rjust(col_width) if ratio is not None else "—".rjust(col_width)
         lines.append(f"    {padded}{cells}")
 
     return "\n".join(lines)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import click
 
+from qluent_cli.rca import rca
 from qluent_cli.trees import trees
 
 
@@ -39,6 +40,7 @@ def config(api_key: str | None, url: str | None, project: str | None, email: str
 
 
 cli.add_command(trees)
+cli.add_command(rca)
 
 
 _CLAUDE_INSTRUCTIONS = """\
@@ -57,6 +59,7 @@ qluent trees evaluate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-M
 qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
 qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
+qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
 ```
 
 All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`
@@ -82,11 +85,18 @@ qluent trees evaluate revenue --period "last week"
 The Shapley attribution tells you WHICH sub-metric drove the change and by how much.
 Focus on the top contributors — they explain where the delta came from.
 
-### Step 3: Cross-reference with `compare`
+### Step 3: Run deterministic root cause analysis with `rca analyze`
+```bash
+qluent rca analyze revenue --period "last week"
+```
+This traverses the tree and, when dimensions are available, cuts suspect nodes by segment
+to surface where the movement is concentrated.
+
+### Step 4: Cross-reference with `compare`
 ```bash
 qluent trees compare revenue order_volume --period "last week"
 ```
-Comparing related trees isolates the mechanism. For example:
+Comparing related trees validates the mechanism. For example:
 - Revenue up +20% but Orders up +20% → pure volume growth
 - Revenue up +20% but Orders up +5% → basket size / mix shift
 - Revenue up but ROAS down → growth is coming at higher cost

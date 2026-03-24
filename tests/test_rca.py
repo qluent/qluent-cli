@@ -1,0 +1,198 @@
+from __future__ import annotations
+
+from click.testing import CliRunner
+
+from qluent_cli.config import QluentConfig
+from qluent_cli.formatters import format_comparison, format_evaluation
+from qluent_cli.main import cli
+
+
+def test_rca_analyze_formats_root_cause_output(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.rca.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_root_cause_tree(
+        self,
+        tree_id,
+        current_from,
+        current_to,
+        comparison_from,
+        comparison_to,
+        *,
+        segment_by,
+        filters,
+        max_depth,
+        max_branching,
+        max_segments,
+        min_contribution_share,
+    ):
+        assert tree_id == "revenue"
+        assert current_from == "2026-03-09"
+        assert comparison_from == "2026-03-02"
+        assert segment_by == ["channel"]
+        assert filters == {"country": ["SE"]}
+        assert max_depth == 2
+        assert max_branching == 1
+        assert max_segments == 3
+        assert min_contribution_share == 0.2
+        return {
+            "tree_label": "Revenue",
+            "tree_id": "revenue",
+            "root_node_id": "revenue",
+            "current_window": {"date_from": "2026-03-09", "date_to": "2026-03-15"},
+            "comparison_window": {"date_from": "2026-03-02", "date_to": "2026-03-08"},
+            "current_value": 900,
+            "comparison_value": 1000,
+            "delta_value": -100,
+            "delta_ratio": -0.1,
+            "dimensions_considered": ["channel"],
+            "findings": [
+                {
+                    "node_id": "revenue",
+                    "label": "Revenue",
+                    "depth": 0,
+                    "path": ["revenue"],
+                    "current_value": 900,
+                    "comparison_value": 1000,
+                    "delta_value": -100,
+                    "delta_ratio": -0.1,
+                    "contribution_value": None,
+                    "contribution_share": None,
+                    "direct_contributors": [
+                        {"node_id": "orders", "label": "Orders", "delta_value": -100, "delta_share": 1.0}
+                    ],
+                    "segment_dimension": "channel",
+                    "segment_findings": [
+                        {
+                            "dimension": "channel",
+                            "segment": "Organic",
+                            "current_value": 600,
+                            "comparison_value": 800,
+                            "delta_value": -200,
+                            "delta_ratio": -0.25,
+                            "share_of_change": 2.0,
+                        }
+                    ],
+                    "filters": {"country": ["SE"]},
+                    "status": "branch",
+                }
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr("qluent_cli.rca.QluentClient.root_cause_tree", mock_root_cause_tree)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "rca",
+            "analyze",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--segment-by",
+            "channel",
+            "--filter",
+            "country=SE",
+            "--max-depth",
+            "2",
+            "--max-branches",
+            "1",
+            "--max-segments",
+            "3",
+            "--min-contribution-share",
+            "0.2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Revenue RCA" in result.output
+    assert "best segment cut: channel -> Organic -200 (200%)" in result.output
+
+
+def test_rca_analyze_rejects_invalid_filter(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.rca.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    result = CliRunner().invoke(cli, ["rca", "analyze", "revenue", "--filter", "country"])
+
+    assert result.exit_code != 0
+    assert "Invalid filter" in result.output
+
+
+def test_format_evaluation_preserves_negative_values():
+    output = format_evaluation(
+        {
+            "tree_label": "Margin",
+            "current_window": {"date_from": "2026-03-10", "date_to": "2026-03-16"},
+            "comparison_window": {"date_from": "2026-03-03", "date_to": "2026-03-09"},
+            "current_value": -5.2,
+            "comparison_value": -1.1,
+            "delta_value": -4.1,
+            "delta_ratio": 3.7272727,
+            "nodes": [
+                {
+                    "label": "Margin",
+                    "comparison_value": -1.1,
+                    "current_value": -5.2,
+                    "delta_value": -4.1,
+                    "delta_ratio": 3.7272727,
+                }
+            ],
+            "top_contributors": [],
+            "warnings": [],
+        }
+    )
+
+    assert "-1" in output
+    assert "→           -5" in output
+
+
+def test_format_comparison_hides_unrelated_nodes():
+    output = format_comparison(
+        [
+            (
+                "Revenue",
+                {
+                    "root_node_id": "revenue",
+                    "nodes": [
+                        {"id": "revenue", "label": "Revenue", "children": ["orders", "aov"], "delta_ratio": 0.1},
+                        {"id": "orders", "label": "Orders", "children": [], "delta_ratio": 0.2},
+                        {"id": "aov", "label": "AOV", "children": [], "delta_ratio": -0.1},
+                    ],
+                },
+            ),
+            (
+                "Spend",
+                {
+                    "root_node_id": "spend",
+                    "nodes": [
+                        {"id": "spend", "label": "Spend", "children": ["brand", "non_brand"], "delta_ratio": -0.05},
+                        {"id": "brand", "label": "Brand", "children": [], "delta_ratio": 0.3},
+                        {"id": "non_brand", "label": "Non-brand", "children": [], "delta_ratio": -0.2},
+                    ],
+                },
+            ),
+        ],
+        "test",
+    )
+
+    assert "Revenue   +10.0%    -5.0%" in output
+    assert "Orders    +20.0%        —" in output
+    assert "AOV       -10.0%        —" in output

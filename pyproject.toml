@@ -1,0 +1,20 @@
+[project]
+name = "qluent-cli"
+version = "0.1.0"
+description = "CLI for Qluent metric tree analysis"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "httpx>=0.25",
+    "rich>=13.0",
+]
+
+[project.scripts]
+qluent = "qluent_cli.main:cli"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

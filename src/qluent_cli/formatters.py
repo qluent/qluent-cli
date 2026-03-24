@@ -184,10 +184,22 @@ def format_root_cause(data: dict[str, Any]) -> str:
     conclusion = data.get("conclusion")
     if conclusion:
         confidence_score = conclusion.get("confidence_score")
-        confidence_line = f"  Confidence: {conclusion['confidence']}"
+        confidence_line = f"  Evidence confidence: {conclusion['confidence']}"
         if confidence_score is not None:
-            confidence_line += f" ({confidence_score * 100:.0f}%)"
+            confidence_line += f" (coverage score {confidence_score * 100:.0f}%)"
         lines.append(confidence_line)
+        if conclusion.get("confidence_description"):
+            lines.append(f"  {conclusion['confidence_description']}")
+        if conclusion.get("evidence_types_present"):
+            lines.append(
+                "  Evidence present: "
+                + ", ".join(conclusion["evidence_types_present"])
+            )
+        if conclusion.get("evidence_types_missing"):
+            lines.append(
+                "  Evidence missing: "
+                + ", ".join(conclusion["evidence_types_missing"])
+            )
 
         takeaways = conclusion.get("takeaways", [])
         if takeaways:
@@ -322,7 +334,7 @@ def format_root_cause(data: dict[str, Any]) -> str:
 
     if conclusion and conclusion.get("confidence_factors"):
         lines.append("")
-        lines.append("  Confidence factors:")
+        lines.append("  Evidence factors:")
         for factor in conclusion["confidence_factors"]:
             lines.append(f"    - {factor}")
 

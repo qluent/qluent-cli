@@ -98,6 +98,19 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
             "conclusion": {
                 "confidence": "high",
                 "confidence_score": 0.9,
+                "confidence_type": "evidence_coverage_heuristic",
+                "confidence_description": (
+                    "Not probabilistic. Higher scores mean broader deterministic evidence "
+                    "coverage, adjusted down for warnings and unresolved branches."
+                ),
+                "evidence_types_present": [
+                    "driver",
+                    "time_slice",
+                    "segment",
+                    "mix_shift",
+                    "mechanism",
+                ],
+                "evidence_types_missing": [],
                 "confidence_factors": [
                     "Direct driver evidence is available.",
                     "Time-slice evidence is available.",
@@ -239,7 +252,9 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
 
     assert result.exit_code == 0
     assert "Revenue RCA" in result.output
-    assert "Confidence: high (90%)" in result.output
+    assert "Evidence confidence: high (coverage score 90%)" in result.output
+    assert "Not probabilistic." in result.output
+    assert "Evidence present: driver, time_slice, segment, mix_shift, mechanism" in result.output
     assert "Top takeaways:" in result.output
     assert "1. Revenue is concentrated in channel=Organic: Δ -200 (+200.0% of root change)" in result.output
     assert "Largest time slices (day):" in result.output
@@ -248,7 +263,7 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
     assert "Organic: Δ -200 | share 80% → 67% (-13pp) | baseline -80 | mix -120" in result.output
     assert "mechanism: Orders effect +200, AOV effect -250, Interaction effect -50" in result.output
     assert "best segment cut: channel -> Organic -200 (200%)" in result.output
-    assert "Confidence factors:" in result.output
+    assert "Evidence factors:" in result.output
 
 
 def test_rca_analyze_rejects_invalid_filter(monkeypatch):

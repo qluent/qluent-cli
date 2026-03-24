@@ -131,6 +131,17 @@ Key properties:
 - **volatile**: direction changes frequently
 - **stable**: changes within ±2%
 
+### RCA confidence
+`conclusion.confidence` and `conclusion.confidence_score` are NOT probabilities.
+They are evidence-coverage heuristics.
+
+Interpret them like this:
+- `confidence_type = evidence_coverage_heuristic` means the score reflects how much deterministic evidence is available.
+- Higher scores mean broader coverage across driver, time-slice, segment/mix-shift, and mechanism evidence.
+- Warnings and unresolved branches reduce the score.
+- Use `evidence_types_present`, `evidence_types_missing`, and `confidence_factors` to explain why the score is high, medium, or low.
+- Never describe `80%` as "80% likely to be true." Describe it as an evidence or coverage score.
+
 ### Example analysis
 "Why did revenue change last week?"
 

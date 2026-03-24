@@ -71,7 +71,14 @@ def save_config(
         existing["user_email"] = user_email
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_DIR.chmod(0o700)
     with open(CONFIG_FILE, "w") as f:
         json.dump(existing, f, indent=2)
+    CONFIG_FILE.chmod(0o600)
 
     return existing
+
+
+def mask_key(value: str) -> str:
+    """Mask an API key for display: show first 10 chars + '...'."""
+    return value[:10] + "..." if len(value) > 10 else value

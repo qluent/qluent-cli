@@ -6,7 +6,6 @@ requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",
     "httpx>=0.25",
-    "rich>=13.0",
 ]
 
 [project.scripts]

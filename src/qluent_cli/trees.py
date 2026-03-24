@@ -11,6 +11,7 @@ from qluent_cli.config import load_config
 from qluent_cli.formatters import (
     format_comparison,
     format_evaluation,
+    format_period_label,
     format_trend,
     format_tree_detail,
     format_tree_list,
@@ -70,24 +71,7 @@ def evaluate(
 
       qluent trees evaluate revenue --current 2025-03-10:2025-03-16 --compare 2025-03-03:2025-03-09
     """
-    from qluent_cli.dates import infer_windows
-
-    if current_range and compare_range:
-        c_from, c_to = current_range.split(":")
-        p_from, p_to = compare_range.split(":")
-    elif current_range:
-        c_from, c_to = current_range.split(":")
-        windows = infer_windows(f"{c_from} {c_to}")
-        p_from = str(windows.comparison.date_from)
-        p_to = str(windows.comparison.date_to)
-    else:
-        period_text = period or "last 7 days"
-        windows = infer_windows(period_text)
-        c_from = str(windows.current.date_from)
-        c_to = str(windows.current.date_to)
-        p_from = str(windows.comparison.date_from)
-        p_to = str(windows.comparison.date_to)
-
+    c_from, c_to, p_from, p_to = _resolve_date_args(period, current_range, compare_range)
     client = QluentClient(load_config())
     data = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
 
@@ -125,7 +109,7 @@ def _resolve_date_args(
 
 @trees.command()
 @click.argument("tree_id")
-@click.option("--periods", "-n", default=4, help="Number of consecutive periods (default: 4)")
+@click.option("--periods", "-n", default=4, type=click.IntRange(1, 52), help="Number of consecutive periods (default: 4)")
 @click.option("--grain", "-g", default="week", type=click.Choice(["week", "month"]), help="Period granularity")
 @click.option("--as-of", "as_of", default=None, help="Reference date as YYYY-MM-DD (default: today)")
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
@@ -144,16 +128,9 @@ def trend(tree_id: str, periods: int, grain: str, as_of: str | None, as_json: bo
 
     from qluent_cli.dates import generate_consecutive_windows
 
-    config = load_config()
-    client = QluentClient(config)
-
+    client = QluentClient(load_config())
     ref_date = dt_date.fromisoformat(as_of) if as_of else None
 
-    # Get tree label
-    tree_data = client.get_tree(tree_id)
-    tree_label = tree_data.get("label", tree_id)
-
-    # Generate window pairs and evaluate each
     window_pairs = generate_consecutive_windows(periods, grain, today=ref_date)
     evaluations = []
     for wp in window_pairs:
@@ -169,6 +146,7 @@ def trend(tree_id: str, periods: int, grain: str, as_of: str | None, as_json: bo
     if as_json:
         click.echo(json.dumps(evaluations, indent=2))
     else:
+        tree_label = evaluations[0].get("tree_label", tree_id) if evaluations else tree_id
         click.echo(format_trend(tree_label, evaluations, grain))
 
 
@@ -206,6 +184,4 @@ def compare(
     if as_json:
         click.echo(json.dumps([d for _, d in results], indent=2))
     else:
-        from qluent_cli.formatters import _fmt_date
-        period_label = f"{_fmt_date(c_from)}–{_fmt_date(c_to)} vs {_fmt_date(p_from)}–{_fmt_date(p_to)}"
-        click.echo(format_comparison(results, period_label))
+        click.echo(format_comparison(results, format_period_label(c_from, c_to, p_from, p_to)))

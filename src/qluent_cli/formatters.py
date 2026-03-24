@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date as dt_date
 from typing import Any
 
 
@@ -11,10 +12,8 @@ def _fmt_num(value: float, signed: bool = False) -> str:
         formatted = f"{abs(value):,.0f}"
     else:
         formatted = f"{abs(value):,.2f}"
-    if signed:
-        prefix = "+" if value >= 0 else "-"
-        return f"{prefix}${formatted}"
-    return f"${formatted}"
+    prefix = "+" if value >= 0 else "-"
+    return f"{prefix}{formatted}" if signed else formatted
 
 
 def _fmt_pct(ratio: float | None) -> str:
@@ -31,10 +30,12 @@ def _fmt_share(share: float | None) -> str:
 
 def _fmt_date(d: str) -> str:
     """Format ISO date as short form: Mar 10."""
-    from datetime import date as dt_date
+    return dt_date.fromisoformat(d).strftime("%b %-d")
 
-    d_obj = dt_date.fromisoformat(d)
-    return d_obj.strftime("%b %-d")
+
+def format_period_label(c_from: str, c_to: str, p_from: str, p_to: str) -> str:
+    """Format a period comparison label like 'Mar 10-Mar 16 vs Mar 3-Mar 9'."""
+    return f"{_fmt_date(c_from)}–{_fmt_date(c_to)} vs {_fmt_date(p_from)}–{_fmt_date(p_to)}"
 
 
 def format_tree_list(data: dict[str, Any]) -> str:

@@ -19,23 +19,23 @@ def cli() -> None:
 @click.option("--email", help="User email")
 def config(api_key: str | None, url: str | None, project: str | None, email: str | None) -> None:
     """Configure Qluent API credentials."""
-    from qluent_cli.config import save_config
+    from qluent_cli.config import CONFIG_FILE, mask_key, save_config
 
     if not any([api_key, url, project, email]):
-        # Show current config
-        from qluent_cli.config import CONFIG_FILE
-
         if CONFIG_FILE.exists():
-            click.echo(CONFIG_FILE.read_text())
+            import json
+
+            data = json.loads(CONFIG_FILE.read_text())
+            for k, v in data.items():
+                click.echo(f"  {k}: {mask_key(v) if k == 'api_key' else v}")
         else:
             click.echo("No config file found. Run: qluent config --api-key qk_... --project UUID --email you@co.com")
         return
 
     result = save_config(api_key=api_key, api_url=url, project_uuid=project, user_email=email)
-    click.echo(f"Config saved to ~/.qluent/config.json")
+    click.echo("Config saved to ~/.qluent/config.json")
     for k, v in result.items():
-        display = v[:10] + "..." if k == "api_key" and len(v) > 10 else v
-        click.echo(f"  {k}: {display}")
+        click.echo(f"  {k}: {mask_key(v) if k == 'api_key' else v}")
 
 
 cli.add_command(trees)

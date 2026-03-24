@@ -53,6 +53,21 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
             "delta_value": -100,
             "delta_ratio": -0.1,
             "dimensions_considered": ["channel"],
+            "time_slice_grain": "day",
+            "time_slices": [
+                {
+                    "current_window": {"date_from": "2026-03-15", "date_to": "2026-03-15"},
+                    "comparison_window": {"date_from": "2026-03-08", "date_to": "2026-03-08"},
+                    "current_value": 200,
+                    "comparison_value": 260,
+                    "delta_value": -60,
+                    "delta_ratio": -0.2307692308,
+                    "share_of_change": 0.6,
+                    "top_contributors": [
+                        {"node_id": "orders", "label": "Orders", "delta_value": -60, "delta_share": 1.0}
+                    ],
+                }
+            ],
             "findings": [
                 {
                     "node_id": "revenue",
@@ -116,6 +131,8 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
 
     assert result.exit_code == 0
     assert "Revenue RCA" in result.output
+    assert "Largest time slices (day):" in result.output
+    assert "Mar 15 vs Mar 8: Δ -60 (-23.1%) | 60% of change" in result.output
     assert "best segment cut: channel -> Organic -200 (200%)" in result.output
 
 

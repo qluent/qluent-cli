@@ -39,6 +39,12 @@ def _fmt_date(d: str) -> str:
     return f"{parsed:%b} {parsed.day}"
 
 
+def _fmt_window(window: dict[str, str]) -> str:
+    if window["date_from"] == window["date_to"]:
+        return _fmt_date(window["date_from"])
+    return f"{_fmt_date(window['date_from'])}–{_fmt_date(window['date_to'])}"
+
+
 def format_period_label(c_from: str, c_to: str, p_from: str, p_to: str) -> str:
     """Format a period comparison label like 'Mar 10-Mar 16 vs Mar 3-Mar 9'."""
     return f"{_fmt_date(c_from)}–{_fmt_date(c_to)} vs {_fmt_date(p_from)}–{_fmt_date(p_to)}"
@@ -168,6 +174,34 @@ def format_root_cause(data: dict[str, Any]) -> str:
 
     if data.get("dimensions_considered"):
         lines.append(f"  Segment cuts: {', '.join(data['dimensions_considered'])}")
+
+    time_slices = data.get("time_slices", [])
+    if time_slices:
+        lines.append("")
+        lines.append(f"  Largest time slices ({data.get('time_slice_grain', 'day')}):")
+        ranked_slices = sorted(
+            time_slices,
+            key=lambda item: abs(item.get("delta_value", 0)),
+            reverse=True,
+        )
+        for slice_result in ranked_slices[:3]:
+            summary = (
+                f"    {_fmt_window(slice_result['current_window'])} vs {_fmt_window(slice_result['comparison_window'])}: "
+                f"Δ {_fmt_num(slice_result['delta_value'], signed=True)} ({_fmt_pct(slice_result.get('delta_ratio'))})"
+            )
+            if slice_result.get("share_of_change") is not None:
+                summary += f" | {_fmt_share(slice_result['share_of_change'])} of change"
+            lines.append(summary)
+
+            top_contributors = slice_result.get("top_contributors", [])
+            if top_contributors:
+                driver_parts = []
+                for contributor in top_contributors:
+                    part = f"{contributor['label']} {_fmt_num(contributor['delta_value'], signed=True)}"
+                    if contributor.get("delta_share") is not None:
+                        part += f" ({_fmt_share(contributor['delta_share'])})"
+                    driver_parts.append(part)
+                lines.append(f"      drivers: " + ", ".join(driver_parts))
 
     findings = data.get("findings", [])
     if findings:

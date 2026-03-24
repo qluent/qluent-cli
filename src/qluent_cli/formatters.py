@@ -260,6 +260,20 @@ def format_root_cause(data: dict[str, Any]) -> str:
                     driver_parts.append(part)
                 lines.append(f"{indent}  child drivers: " + ", ".join(driver_parts))
 
+            formula_analysis = finding.get("formula_analysis")
+            if formula_analysis and formula_analysis.get("effects"):
+                non_zero_effects = [
+                    effect
+                    for effect in formula_analysis["effects"]
+                    if abs(effect.get("effect_value", 0)) > 1e-9
+                ]
+                visible_effects = non_zero_effects or formula_analysis["effects"][:1]
+                effect_parts = [
+                    f"{effect['label']} {_fmt_num(effect['effect_value'], signed=True)}"
+                    for effect in visible_effects
+                ]
+                lines.append(f"{indent}  mechanism: " + ", ".join(effect_parts))
+
             segment_dimension = finding.get("segment_dimension")
             segment_findings = finding.get("segment_findings", [])
             if segment_dimension and segment_findings:

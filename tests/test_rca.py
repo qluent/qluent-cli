@@ -110,6 +110,42 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
                     "direct_contributors": [
                         {"node_id": "orders", "label": "Orders", "delta_value": -100, "delta_share": 1.0}
                     ],
+                    "formula_analysis": {
+                        "formula": "orders * aov",
+                        "method": "two_factor_product",
+                        "effects": [
+                            {
+                                "kind": "child",
+                                "label": "Orders effect",
+                                "node_id": "orders",
+                                "current_value": 120,
+                                "comparison_value": 100,
+                                "delta_value": 20,
+                                "effect_value": 200,
+                                "effect_share": -2.0,
+                            },
+                            {
+                                "kind": "child",
+                                "label": "AOV effect",
+                                "node_id": "aov",
+                                "current_value": 7.5,
+                                "comparison_value": 10,
+                                "delta_value": -2.5,
+                                "effect_value": -250,
+                                "effect_share": 2.5,
+                            },
+                            {
+                                "kind": "interaction",
+                                "label": "Interaction effect",
+                                "node_id": None,
+                                "current_value": None,
+                                "comparison_value": None,
+                                "delta_value": None,
+                                "effect_value": -50,
+                                "effect_share": 0.5,
+                            },
+                        ],
+                    },
                     "segment_dimension": "channel",
                     "segment_findings": [
                         {
@@ -162,6 +198,7 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
     assert "Mar 15 vs Mar 8: Δ -60 (-23.1%) | 60% of change" in result.output
     assert "Mix shift (channel):" in result.output
     assert "Organic: Δ -200 | share 80% → 67% (-13pp) | baseline -80 | mix -120" in result.output
+    assert "mechanism: Orders effect +200, AOV effect -250, Interaction effect -50" in result.output
     assert "best segment cut: channel -> Organic -200 (200%)" in result.output
 
 

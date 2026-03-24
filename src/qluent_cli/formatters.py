@@ -181,6 +181,28 @@ def format_root_cause(data: dict[str, Any]) -> str:
     if data.get("dimensions_considered"):
         lines.append(f"  Segment cuts: {', '.join(data['dimensions_considered'])}")
 
+    conclusion = data.get("conclusion")
+    if conclusion:
+        confidence_score = conclusion.get("confidence_score")
+        confidence_line = f"  Confidence: {conclusion['confidence']}"
+        if confidence_score is not None:
+            confidence_line += f" ({confidence_score * 100:.0f}%)"
+        lines.append(confidence_line)
+
+        takeaways = conclusion.get("takeaways", [])
+        if takeaways:
+            lines.append("")
+            lines.append("  Top takeaways:")
+            for index, takeaway in enumerate(takeaways[:5], start=1):
+                lines.append(f"    {index}. {takeaway['summary']}")
+
+        unresolved = conclusion.get("unresolved_nodes", [])
+        if unresolved:
+            lines.append("")
+            lines.append("  Unresolved branches:")
+            for item in unresolved[:3]:
+                lines.append(f"    - {item['summary']}")
+
     time_slices = data.get("time_slices", [])
     if time_slices:
         lines.append("")
@@ -297,6 +319,12 @@ def format_root_cause(data: dict[str, Any]) -> str:
         lines.append("  Warnings:")
         for warning in warnings:
             lines.append(f"    ! {warning}")
+
+    if conclusion and conclusion.get("confidence_factors"):
+        lines.append("")
+        lines.append("  Confidence factors:")
+        for factor in conclusion["confidence_factors"]:
+            lines.append(f"    - {factor}")
 
     return "\n".join(lines)
 

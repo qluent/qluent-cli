@@ -95,6 +95,51 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
                     },
                 ],
             },
+            "conclusion": {
+                "confidence": "high",
+                "confidence_score": 0.9,
+                "confidence_factors": [
+                    "Direct driver evidence is available.",
+                    "Time-slice evidence is available.",
+                    "Segment-level evidence is available.",
+                    "Formula mechanism evidence is available.",
+                    "Multiple ranked takeaways support the result.",
+                    "No execution warnings were raised.",
+                ],
+                "takeaways": [
+                    {
+                        "kind": "segment",
+                        "title": "Revenue: channel=Organic",
+                        "summary": "Revenue is concentrated in channel=Organic: Δ -200 (+200.0% of root change)",
+                        "score": 2.0,
+                        "node_id": "revenue",
+                        "path": ["revenue"],
+                        "delta_value": -200,
+                        "effect_value": None,
+                        "share_of_change": 2.0,
+                        "dimension": "channel",
+                        "segment": "Organic",
+                        "current_window": None,
+                        "comparison_window": None,
+                    },
+                    {
+                        "kind": "mechanism",
+                        "title": "Revenue: AOV effect",
+                        "summary": "Revenue mechanism is led by AOV effect -250",
+                        "score": 2.5,
+                        "node_id": "revenue",
+                        "path": ["revenue"],
+                        "delta_value": None,
+                        "effect_value": -250,
+                        "share_of_change": 2.5,
+                        "dimension": None,
+                        "segment": None,
+                        "current_window": None,
+                        "comparison_window": None,
+                    },
+                ],
+                "unresolved_nodes": [],
+            },
             "findings": [
                 {
                     "node_id": "revenue",
@@ -194,12 +239,16 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
 
     assert result.exit_code == 0
     assert "Revenue RCA" in result.output
+    assert "Confidence: high (90%)" in result.output
+    assert "Top takeaways:" in result.output
+    assert "1. Revenue is concentrated in channel=Organic: Δ -200 (+200.0% of root change)" in result.output
     assert "Largest time slices (day):" in result.output
     assert "Mar 15 vs Mar 8: Δ -60 (-23.1%) | 60% of change" in result.output
     assert "Mix shift (channel):" in result.output
     assert "Organic: Δ -200 | share 80% → 67% (-13pp) | baseline -80 | mix -120" in result.output
     assert "mechanism: Orders effect +200, AOV effect -250, Interaction effect -50" in result.output
     assert "best segment cut: channel -> Organic -200 (200%)" in result.output
+    assert "Confidence factors:" in result.output
 
 
 def test_rca_analyze_rejects_invalid_filter(monkeypatch):

@@ -167,3 +167,44 @@ def _quarter_to_date(today: date) -> DateWindows:
         current=DateWindow(c_start, today),
         comparison=DateWindow(p_start, p_end),
     )
+
+
+def generate_consecutive_windows(
+    periods: int,
+    grain: str = "week",
+    today: date | None = None,
+) -> list[DateWindows]:
+    """Generate N consecutive (current, comparison) window pairs.
+
+    For grain="week": N weekly windows ending before today, each compared to its predecessor.
+    For grain="month": N calendar month windows.
+
+    Returns windows ordered oldest-first: [W-N vs W-(N+1), ..., W-1 vs W-2].
+    """
+    resolved_today = today or date.today()
+    windows: list[DateWindows] = []
+
+    if grain == "month":
+        for i in range(periods, 0, -1):
+            c_start = _month_start(_shift_month(resolved_today, -i))
+            c_end = _month_end(c_start)
+            p_start = _month_start(_shift_month(c_start, -1))
+            p_end = _month_end(p_start)
+            windows.append(DateWindows(
+                current=DateWindow(c_start, c_end),
+                comparison=DateWindow(p_start, p_end),
+            ))
+    else:
+        # Weekly: most recent complete week is W0, then W-1, etc.
+        last_monday = resolved_today - timedelta(days=resolved_today.weekday() + 7)
+        for i in range(periods - 1, -1, -1):
+            c_start = last_monday - timedelta(weeks=i)
+            c_end = c_start + timedelta(days=6)
+            p_start = c_start - timedelta(days=7)
+            p_end = c_end - timedelta(days=7)
+            windows.append(DateWindows(
+                current=DateWindow(c_start, c_end),
+                comparison=DateWindow(p_start, p_end),
+            ))
+
+    return windows

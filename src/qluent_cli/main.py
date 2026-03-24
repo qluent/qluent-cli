@@ -50,26 +50,48 @@ questions about business performance, revenue drivers, cost breakdowns, and tren
 ## Commands
 
 ```bash
-qluent trees list                                    # List available metric trees
-qluent trees get <tree_id>                           # Show tree hierarchy
-qluent trees evaluate <tree_id> --period "last week" # Evaluate with natural language period
+qluent trees list                                           # List available metric trees
+qluent trees get <tree_id>                                  # Show tree hierarchy
+qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
 qluent trees evaluate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD
-qluent trees evaluate <tree_id> --json-output        # Raw JSON for further processing
+qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
+qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
+qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
 ```
+
+All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`
+to set the reference date.
 
 Supported periods: "last week", "this week", "last month", "this month", "last quarter",
 "yesterday", "last 30 days", "week over week", "month over month", or explicit ISO dates.
 
+## Root cause analysis workflow
+
+When asked to analyze business performance, follow this 3-step drill-down:
+
+### Step 1: Spot the anomaly with `trend`
+```bash
+qluent trees trend revenue --periods 4 --grain week
+```
+Look for: which period had an unusual change? Is the trend accelerating, declining, or volatile?
+
+### Step 2: Drill into the anomaly with `evaluate`
+```bash
+qluent trees evaluate revenue --period "last week"
+```
+The Shapley attribution tells you WHICH sub-metric drove the change and by how much.
+Focus on the top contributors — they explain where the delta came from.
+
+### Step 3: Cross-reference with `compare`
+```bash
+qluent trees compare revenue order_volume --period "last week"
+```
+Comparing related trees isolates the mechanism. For example:
+- Revenue up +20% but Orders up +20% → pure volume growth
+- Revenue up +20% but Orders up +5% → basket size / mix shift
+- Revenue up but ROAS down → growth is coming at higher cost
+
 ## How to interpret results
-
-### Tree structure
-Each metric tree decomposes a top-level KPI into sub-metrics. Leaf nodes execute SQL queries
-against the data warehouse. Formula nodes compute from their children (e.g., `paid + owned + organic`).
-
-### Evaluation output
-- **Current vs Comparison**: Two time windows compared side-by-side.
-- **Delta**: The absolute change (current - comparison).
-- **Delta ratio**: The percentage change (delta / comparison).
 
 ### Shapley-value attribution (Top contributors)
 Each child's contribution to the parent's delta is computed using Shapley values from
@@ -78,27 +100,30 @@ to each child?"
 
 Key properties:
 - **Contributions sum to the parent delta** — they fully explain the change.
-- **A share > 100%** means this child drove MORE change than the total, offset by others moving opposite.
-- **A negative share** means this child moved against the overall trend (e.g., grew while total declined).
-- This is NOT a simple percentage breakdown — it accounts for formula interactions (e.g., in ROAS = revenue / spend, both numerator and denominator changes are attributed correctly).
+- **A share > 100%** means this child drove MORE change than the total, offset by others.
+- **A negative share** means this child moved against the overall trend.
+- This is NOT a simple percentage breakdown — it accounts for formula interactions
+  (e.g., in ROAS = revenue / spend, both numerator and denominator are attributed correctly).
 
-### Example interpretation
-```
-Top contributors:
-  Owned Channel Revenue    +$25,251  (143% of change)
-  Organic Revenue           -$9,899  (-56% of change)
-  Paid Channel Revenue      +$2,275  (13% of change)
-```
-Read as: "Owned channels drove $25K of growth (more than the total $17.6K increase),
-but Organic declined by $9.9K, partially offsetting the gains. Paid contributed modestly."
+### Trend labels
+- **accelerating**: positive and growing faster
+- **decelerating**: positive but slowing down
+- **recovering**: was negative, now positive
+- **declining**: was positive, now negative
+- **volatile**: direction changes frequently
+- **stable**: changes within ±2%
 
-## Best practices
-- Start with `qluent trees list` to discover available lenses before evaluating.
-- Use the tree hierarchy (`qluent trees get`) to understand what rolls up into what.
-- When a contributor has a large share, drill into that subtree to find the root cause.
-- Compare multiple trees for a complete picture (e.g., Revenue + Order Volume to separate
-  volume effects from basket size effects).
-- Use `--json-output` when you need to do further calculations on the raw numbers.
+### Example analysis
+"Why did revenue change last week?"
+
+1. `trend` shows: Revenue was +11%, +11%, then +6% → **decelerating**
+2. `evaluate` shows: Owned channels drove 143% of growth, but Organic declined 56%
+3. `compare` Revenue vs Orders: Owned revenue +20% but Owned orders -5% → higher basket size,
+   not more customers. Organic orders -5% matching Organic revenue -12% → volume loss.
+
+Conclusion: "Revenue growth is decelerating. Last week's gain came from higher basket sizes
+in owned channels (Direct, Email), not from customer acquisition. Organic traffic continues
+to decline — investigate SEO or content changes."
 """
 
 

@@ -33,6 +33,12 @@ def _fmt_share(share: float | None) -> str:
     return f"{share * 100:.0f}%"
 
 
+def _fmt_share_delta(share: float | None) -> str:
+    if share is None:
+        return "n/a"
+    return f"{share * 100:+.0f}pp"
+
+
 def _fmt_date(d: str) -> str:
     """Format ISO date as short form: Mar 10."""
     parsed = dt_date.fromisoformat(d)
@@ -202,6 +208,29 @@ def format_root_cause(data: dict[str, Any]) -> str:
                         part += f" ({_fmt_share(contributor['delta_share'])})"
                     driver_parts.append(part)
                 lines.append(f"      drivers: " + ", ".join(driver_parts))
+
+    mix_shift = data.get("mix_shift")
+    if mix_shift and mix_shift.get("segments"):
+        lines.append("")
+        lines.append(f"  Mix shift ({mix_shift['dimension']}):")
+        for segment in mix_shift["segments"][:3]:
+            summary = (
+                f"    {segment['segment']}: Δ {_fmt_num(segment['delta_value'], signed=True)}"
+            )
+            if (
+                segment.get("comparison_share") is not None
+                and segment.get("current_share") is not None
+            ):
+                summary += (
+                    f" | share {_fmt_share(segment['comparison_share'])}"
+                    f" → {_fmt_share(segment['current_share'])}"
+                    f" ({_fmt_share_delta(segment.get('share_delta'))})"
+                )
+            if segment.get("baseline_effect") is not None:
+                summary += f" | baseline {_fmt_num(segment['baseline_effect'], signed=True)}"
+            if segment.get("mix_effect") is not None:
+                summary += f" | mix {_fmt_num(segment['mix_effect'], signed=True)}"
+            lines.append(summary)
 
     findings = data.get("findings", [])
     if findings:

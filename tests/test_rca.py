@@ -68,6 +68,33 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
                     ],
                 }
             ],
+            "mix_shift": {
+                "dimension": "channel",
+                "segments": [
+                    {
+                        "segment": "Organic",
+                        "current_value": 600,
+                        "comparison_value": 800,
+                        "delta_value": -200,
+                        "current_share": 0.6666666667,
+                        "comparison_share": 0.8,
+                        "share_delta": -0.1333333333,
+                        "baseline_effect": -80,
+                        "mix_effect": -120,
+                    },
+                    {
+                        "segment": "Paid",
+                        "current_value": 300,
+                        "comparison_value": 200,
+                        "delta_value": 100,
+                        "current_share": 0.3333333333,
+                        "comparison_share": 0.2,
+                        "share_delta": 0.1333333333,
+                        "baseline_effect": -20,
+                        "mix_effect": 120,
+                    },
+                ],
+            },
             "findings": [
                 {
                     "node_id": "revenue",
@@ -133,6 +160,8 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
     assert "Revenue RCA" in result.output
     assert "Largest time slices (day):" in result.output
     assert "Mar 15 vs Mar 8: Δ -60 (-23.1%) | 60% of change" in result.output
+    assert "Mix shift (channel):" in result.output
+    assert "Organic: Δ -200 | share 80% → 67% (-13pp) | baseline -80 | mix -120" in result.output
     assert "best segment cut: channel -> Organic -200 (200%)" in result.output
 
 

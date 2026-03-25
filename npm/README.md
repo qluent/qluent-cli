@@ -1,6 +1,7 @@
 # `@qluent/cli`
 
 This npm package installs the platform-specific `qluent` binary.
+Downloads must use HTTPS by default, and the installer verifies each binary against a `.sha256` checksum file before installation.
 
 ## Install
 
@@ -32,4 +33,10 @@ Or point directly at one binary:
 
 ```bash
 QLUENT_CLI_BIN_URL=https://your-host/qluent-darwin-arm64 npm install -g @qluent/cli
+```
+
+For local development only, you can allow insecure `http://` download URLs with:
+
+```bash
+QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD=1 npm install -g @qluent/cli
 ```

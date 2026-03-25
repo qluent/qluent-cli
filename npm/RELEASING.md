@@ -77,6 +77,16 @@ https://downloads.qluent.io/cli/v0.1.0/qluent-linux-x64
 https://downloads.qluent.io/cli/v0.1.0/qluent-windows-x64.exe
 ```
 
+Upload the matching checksum sidecars too:
+
+```text
+https://downloads.qluent.io/cli/v0.1.0/qluent-darwin-arm64.sha256
+https://downloads.qluent.io/cli/v0.1.0/qluent-linux-x64.sha256
+https://downloads.qluent.io/cli/v0.1.0/qluent-windows-x64.exe.sha256
+```
+
+The npm installer verifies each downloaded binary against its sidecar before installation.
+
 ## Step 3: Publish npm package
 
 From [npm](./):
@@ -111,6 +121,12 @@ and:
 
 ```bash
 QLUENT_CLI_BIN_URL=https://your-host/qluent-darwin-arm64 npm install -g @qluent/cli
+```
+
+If you need to test an insecure local `http://` host during development, use:
+
+```bash
+QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD=1 QLUENT_CLI_DIST_BASE_URL=http://localhost:9000 npm install -g @qluent/cli
 ```
 
 ## Rollback

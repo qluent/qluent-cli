@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import platform
 import shutil
 import subprocess
@@ -37,6 +38,20 @@ def executable_name(platform_name: str) -> str:
 def artifact_name(platform_name: str, arch_name: str) -> str:
     suffix = ".exe" if platform_name == "windows" else ""
     return f"qluent-{platform_name}-{arch_name}{suffix}"
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_sha256_file(path: Path) -> Path:
+    checksum_path = path.with_name(f"{path.name}.sha256")
+    checksum_path.write_text(f"{sha256_file(path)}  {path.name}\n")
+    return checksum_path
 
 
 def build_pyinstaller_args(
@@ -111,6 +126,7 @@ def build_binary(
     final_path = output_dir / artifact_name(platform_name, arch_name)
     shutil.copy2(built_binary, final_path)
     final_path.chmod(0o755)
+    write_sha256_file(final_path)
     return final_path
 
 

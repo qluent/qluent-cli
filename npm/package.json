@@ -7,10 +7,12 @@
     "qluent": "bin/qluent.js"
   },
   "scripts": {
-    "postinstall": "node install.js"
+    "postinstall": "node install.js",
+    "test": "node --test tests/*.test.js"
   },
   "files": [
     "bin/qluent.js",
+    "lib/installer.js",
     "install.js",
     "README.md"
   ],

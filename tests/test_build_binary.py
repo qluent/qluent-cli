@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from qluent_cli.build_binary import (
@@ -7,6 +9,8 @@ from qluent_cli.build_binary import (
     executable_name,
     normalize_arch,
     normalize_platform,
+    sha256_file,
+    write_sha256_file,
 )
 
 
@@ -36,3 +40,13 @@ def test_unsupported_platform_and_arch_raise():
         normalize_platform("solaris")
     with pytest.raises(ValueError):
         normalize_arch("ppc64")
+
+
+def test_write_sha256_file_writes_sidecar(tmp_path: Path):
+    artifact = tmp_path / "qluent-darwin-arm64"
+    artifact.write_text("hello")
+
+    checksum_path = write_sha256_file(artifact)
+
+    assert checksum_path.name == "qluent-darwin-arm64.sha256"
+    assert checksum_path.read_text() == f"{sha256_file(artifact)}  qluent-darwin-arm64\n"

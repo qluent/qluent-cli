@@ -88,8 +88,40 @@ qluent-linux-x64
 qluent-windows-x64.exe
 ```
 
+It also writes a matching SHA-256 sidecar file for each artifact:
+
+```text
+qluent-darwin-arm64.sha256
+```
+
 PyInstaller builds for the current OS/architecture, so run the build once per target platform or use CI runners for each platform.
+
+## Local End-To-End Smoke Test
+
+To build the current-platform binary and smoke-test it in an isolated temp home directory:
+
+```bash
+cli/scripts/local_smoke_test.sh
+```
+
+To also test the npm wrapper locally:
+
+```bash
+QLUENT_SMOKE_NPM=1 cli/scripts/local_smoke_test.sh
+```
+
+To include a real API smoke test:
+
+```bash
+QLUENT_TEST_API_KEY=qk_... \
+QLUENT_TEST_PROJECT_UUID=<PROJECT_UUID> \
+QLUENT_TEST_USER_EMAIL=you@example.com \
+QLUENT_TEST_URL=https://api.qluent.io \
+QLUENT_TEST_TREE_ID=revenue \
+cli/scripts/local_smoke_test.sh
+```
 
 ## Publishing
 
 The npm wrapper lives in [npm](./npm). It is designed to download platform-specific release binaries from your distribution host.
+It requires HTTPS downloads by default and verifies each binary against its `.sha256` sidecar before installation.

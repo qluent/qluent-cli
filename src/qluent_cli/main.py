@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import click
 
 from qluent_cli.rca import rca
@@ -11,6 +14,38 @@ from qluent_cli.trees import trees
 @click.group()
 def cli() -> None:
     """Qluent — metric tree analysis from the command line."""
+
+
+def _load_saved_config() -> dict[str, object]:
+    from qluent_cli.config import CONFIG_FILE
+
+    if not CONFIG_FILE.exists():
+        return {}
+    return json.loads(CONFIG_FILE.read_text())
+
+
+def _print_saved_config(data: dict[str, object]) -> None:
+    from qluent_cli.config import mask_key
+
+    for key, value in data.items():
+        click.echo(f"  {key}: {mask_key(value) if key == 'api_key' else value}")
+
+
+def _prompt_required(
+    label: str,
+    *,
+    default: str | None = None,
+    show_default: bool = True,
+) -> str:
+    while True:
+        value = click.prompt(
+            label,
+            default=default or "",
+            show_default=show_default and bool(default),
+        ).strip()
+        if value:
+            return value
+        click.echo(f"{label} is required")
 
 
 @cli.command()
@@ -31,21 +66,18 @@ def config(
     client_safe: bool | None,
 ) -> None:
     """Configure Qluent API credentials."""
-    from qluent_cli.config import CONFIG_FILE, default_client_safe, mask_key, save_config
+    from qluent_cli.config import CONFIG_FILE, default_client_safe, save_config
 
     if not any([api_key, url, project, email, client_safe is not None]):
         if CONFIG_FILE.exists():
-            import json
-
-            data = json.loads(CONFIG_FILE.read_text())
+            data = _load_saved_config()
             if "client_safe" not in data:
                 data["client_safe"] = default_client_safe(
                     str(data.get("api_url") or "https://api.qluent.io")
                 )
-            for k, v in data.items():
-                click.echo(f"  {k}: {mask_key(v) if k == 'api_key' else v}")
+            _print_saved_config(data)
         else:
-            click.echo("No config file found. Run: qluent config --api-key qk_... --project UUID --email you@co.com")
+            click.echo("No config file found. Run: qluent setup")
         return
 
     result = save_config(
@@ -60,8 +92,94 @@ def config(
             str(result.get("api_url") or "https://api.qluent.io")
         )
     click.echo("Config saved to ~/.qluent/config.json")
-    for k, v in result.items():
-        click.echo(f"  {k}: {mask_key(v) if k == 'api_key' else v}")
+    _print_saved_config(result)
+
+
+def _write_claude_file(path: Path, *, force: bool) -> str:
+    content = _CLAUDE_INSTRUCTIONS.strip() + "\n"
+    if path.exists():
+        existing = path.read_text()
+        if existing == content:
+            return f"{path} is already up to date"
+        if not force:
+            raise click.ClickException(f"{path} already exists. Re-run with --force to overwrite it.")
+    path.write_text(content)
+    return f"Wrote {path}"
+
+
+@cli.command()
+@click.option(
+    "--claude-path",
+    default="CLAUDE.md",
+    show_default=True,
+    help="Where to write the Claude Code instructions file.",
+)
+@click.option("--force", is_flag=True, help="Overwrite an existing CLAUDE.md without prompting.")
+def setup(claude_path: str, force: bool) -> None:
+    """Interactive first-run setup for client installations."""
+    from qluent_cli.config import default_client_safe, save_config
+
+    existing = _load_saved_config()
+
+    api_key = _prompt_required(
+        "API key",
+        default=str(existing.get("api_key") or ""),
+        show_default=False,
+    )
+    project_uuid = _prompt_required(
+        "Project UUID",
+        default=str(existing.get("project_uuid") or ""),
+        show_default=False,
+    )
+    user_email = _prompt_required(
+        "User email",
+        default=str(existing.get("user_email") or ""),
+        show_default=False,
+    )
+    api_url = _prompt_required(
+        "API base URL",
+        default=str(existing.get("api_url") or "https://api.qluent.io"),
+        show_default=True,
+    )
+
+    stored_client_safe = existing.get("client_safe")
+    safe_default = (
+        bool(stored_client_safe)
+        if stored_client_safe is not None
+        else default_client_safe(api_url)
+    )
+    client_safe = click.confirm("Use client-safe mode", default=safe_default)
+
+    result = save_config(
+        api_key=api_key,
+        api_url=api_url,
+        project_uuid=project_uuid,
+        user_email=user_email,
+        client_safe=client_safe,
+    )
+    click.echo("Config saved to ~/.qluent/config.json")
+    _print_saved_config(result)
+
+    target = Path(claude_path)
+    write_claude = click.confirm(
+        f"Write Claude Code instructions to {target}?",
+        default=True,
+    )
+    if not write_claude:
+        click.echo("Skipped CLAUDE.md generation")
+        return
+
+    should_force = force
+    if target.exists() and not force:
+        should_force = click.confirm(
+            f"{target} already exists. Overwrite it?",
+            default=False,
+        )
+        if not should_force:
+            click.echo("Skipped CLAUDE.md generation")
+            return
+
+    click.echo(_write_claude_file(target, force=should_force))
 
 
 cli.add_command(trees)
@@ -185,3 +303,19 @@ to decline — investigate SEO or content changes."
 def instructions() -> None:
     """Print a CLAUDE.md snippet for Claude Code integration."""
     click.echo(_CLAUDE_INSTRUCTIONS)
+
+
+@cli.group()
+def claude() -> None:
+    """Claude Code integration helpers."""
+
+
+@claude.command("init")
+@click.option("--path", "target_path", default="CLAUDE.md", show_default=True, help="Path to write CLAUDE.md")
+@click.option("--force", is_flag=True, help="Overwrite an existing CLAUDE.md")
+def claude_init(target_path: str, force: bool) -> None:
+    """Write a CLAUDE.md file for Claude Code."""
+    click.echo(_write_claude_file(Path(target_path), force=force))
+
+
+cli.add_command(claude)

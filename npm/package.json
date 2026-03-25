@@ -1,0 +1,20 @@
+{
+  "name": "@qluent/cli",
+  "version": "0.1.0",
+  "description": "Install the Qluent CLI",
+  "license": "UNLICENSED",
+  "bin": {
+    "qluent": "bin/qluent.js"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "files": [
+    "bin/qluent.js",
+    "install.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

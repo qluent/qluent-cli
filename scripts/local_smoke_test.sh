@@ -8,7 +8,7 @@ CLI_DIR="$ROOT_DIR"
 usage() {
   cat <<'EOF'
 Usage:
-  cli/scripts/local_smoke_test.sh
+  scripts/local_smoke_test.sh
 
 Optional environment variables:
   QLUENT_TEST_API_KEY       API key for a real API smoke test

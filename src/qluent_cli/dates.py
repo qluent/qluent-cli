@@ -1,4 +1,4 @@
-"""Date inference — ported from backend/app/infrastructure/metric_trees.py."""
+"""Date inference helpers for CLI period parsing and trend generation."""
 
 from __future__ import annotations
 

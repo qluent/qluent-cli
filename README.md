@@ -1,6 +1,7 @@
 # Qluent CLI
 
 `qluent` is a client-facing CLI for deterministic metric-tree analysis and root-cause analysis.
+This README is written for the standalone `qluent-cli` repository layout.
 
 ## Client Install
 
@@ -59,27 +60,26 @@ qluent rca analyze revenue --period "last week"
 
 ## Internal / Direct Python Install
 
-If you are installing from this repo instead of the npm distribution:
+If you are installing from source instead of the npm distribution, run these commands from the
+CLI repo root:
 
 ```bash
-cd cli
 uv build
 pipx install dist/qluent_cli-0.1.0-py3-none-any.whl
 ```
 
 ## Building Release Binaries
 
-For the npm installer, build a standalone binary on each target platform:
+For the npm installer, build a standalone binary on each target platform from the CLI repo root:
 
 ```bash
-cd cli
 uv run --extra build python -m qluent_cli.build_binary
 ```
 
 That writes a platform-specific artifact to:
 
 ```text
-cli/dist/binaries/
+dist/binaries/
 ```
 
 Examples:
@@ -103,13 +103,13 @@ PyInstaller builds for the current OS/architecture, so run the build once per ta
 To build the current-platform binary and smoke-test it in an isolated temp home directory:
 
 ```bash
-cli/scripts/local_smoke_test.sh
+scripts/local_smoke_test.sh
 ```
 
 To also test the npm wrapper locally:
 
 ```bash
-QLUENT_SMOKE_NPM=1 cli/scripts/local_smoke_test.sh
+QLUENT_SMOKE_NPM=1 scripts/local_smoke_test.sh
 ```
 
 To include a real API smoke test:
@@ -120,7 +120,7 @@ QLUENT_TEST_PROJECT_UUID=<PROJECT_UUID> \
 QLUENT_TEST_USER_EMAIL=you@example.com \
 QLUENT_TEST_URL=https://api.qluent.io \
 QLUENT_TEST_TREE_ID=revenue \
-cli/scripts/local_smoke_test.sh
+scripts/local_smoke_test.sh
 ```
 
 ## Publishing

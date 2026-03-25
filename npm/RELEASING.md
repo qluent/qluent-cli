@@ -37,7 +37,29 @@ Build one binary per target platform. Recommended targets:
 - Linux arm64
 - Windows x64
 
-Keep the executable name as `qluent` or `qluent.exe`.
+From [cli](/Users/ludvigjakobsson/src/qluent-ui/cli):
+
+```bash
+uv run --extra build python -m qluent_cli.build_binary
+```
+
+That produces a correctly named artifact in:
+
+```text
+cli/dist/binaries/
+```
+
+Examples:
+
+```text
+qluent-darwin-arm64
+qluent-linux-x64
+qluent-windows-x64.exe
+```
+
+PyInstaller builds for the current OS/architecture only, so run the build once per target platform or use native CI runners.
+
+You can also use the GitHub Actions workflow in [qluent-cli-binaries.yml](/Users/ludvigjakobsson/src/qluent-ui/.github/workflows/qluent-cli-binaries.yml) to build native artifacts on macOS, Linux, and Windows runners.
 
 ## Step 2: Upload binaries
 

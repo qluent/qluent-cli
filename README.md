@@ -65,6 +65,31 @@ uv build
 pipx install dist/qluent_cli-0.1.0-py3-none-any.whl
 ```
 
+## Building Release Binaries
+
+For the npm installer, build a standalone binary on each target platform:
+
+```bash
+cd cli
+uv run --extra build python -m qluent_cli.build_binary
+```
+
+That writes a platform-specific artifact to:
+
+```text
+cli/dist/binaries/
+```
+
+Examples:
+
+```text
+qluent-darwin-arm64
+qluent-linux-x64
+qluent-windows-x64.exe
+```
+
+PyInstaller builds for the current OS/architecture, so run the build once per target platform or use CI runners for each platform.
+
 ## Publishing
 
 The npm wrapper lives in [npm](./npm). It is designed to download platform-specific release binaries from your distribution host.

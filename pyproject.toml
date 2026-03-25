@@ -9,6 +9,11 @@ dependencies = [
     "httpx>=0.25",
 ]
 
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0",
+]
+
 [project.scripts]
 qluent = "qluent_cli.main:cli"
 

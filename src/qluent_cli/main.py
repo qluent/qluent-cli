@@ -31,13 +31,17 @@ def config(
     client_safe: bool | None,
 ) -> None:
     """Configure Qluent API credentials."""
-    from qluent_cli.config import CONFIG_FILE, mask_key, save_config
+    from qluent_cli.config import CONFIG_FILE, default_client_safe, mask_key, save_config
 
     if not any([api_key, url, project, email, client_safe is not None]):
         if CONFIG_FILE.exists():
             import json
 
             data = json.loads(CONFIG_FILE.read_text())
+            if "client_safe" not in data:
+                data["client_safe"] = default_client_safe(
+                    str(data.get("api_url") or "https://api.qluent.io")
+                )
             for k, v in data.items():
                 click.echo(f"  {k}: {mask_key(v) if k == 'api_key' else v}")
         else:
@@ -51,6 +55,10 @@ def config(
         user_email=email,
         client_safe=client_safe,
     )
+    if "client_safe" not in result:
+        result["client_safe"] = default_client_safe(
+            str(result.get("api_url") or "https://api.qluent.io")
+        )
     click.echo("Config saved to ~/.qluent/config.json")
     for k, v in result.items():
         click.echo(f"  {k}: {mask_key(v) if k == 'api_key' else v}")

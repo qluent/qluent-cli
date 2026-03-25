@@ -29,6 +29,14 @@ def _parse_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
+def default_client_safe(api_url: str) -> bool:
+    normalized = api_url.rstrip("/").lower()
+    return not (
+        normalized.startswith("http://localhost")
+        or normalized.startswith("http://127.0.0.1")
+    )
+
+
 def load_config() -> QluentConfig:
     """Load config from env vars, falling back to ~/.qluent/config.json."""
     file_config: dict[str, Any] = {}
@@ -43,7 +51,12 @@ def load_config() -> QluentConfig:
     api_url = get("QLUENT_API_URL", "api_url") or "https://api.qluent.io"
     project_uuid = get("QLUENT_PROJECT_UUID", "project_uuid")
     user_email = get("QLUENT_USER_EMAIL", "user_email")
-    client_safe = _parse_bool(get("QLUENT_CLIENT_SAFE", "client_safe"))
+    if "QLUENT_CLIENT_SAFE" in os.environ:
+        client_safe = _parse_bool(os.environ["QLUENT_CLIENT_SAFE"])
+    elif "client_safe" in file_config:
+        client_safe = _parse_bool(file_config["client_safe"])
+    else:
+        client_safe = default_client_safe(api_url)
 
     if not api_key:
         raise SystemExit("No API key configured. Run: qluent config --api-key qk_...")

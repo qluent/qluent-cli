@@ -77,6 +77,55 @@ def format_tree_list(data: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip()
 
 
+def format_tree_match(data: dict[str, Any]) -> str:
+    """Format natural-language tree matching output."""
+    current_window = data["current_window"]
+    comparison_window = data["comparison_window"]
+    lines = [f'Question: "{data["question"]}"', ""]
+
+    if data.get("matched"):
+        lines.append(
+            f"Matched tree: {data['tree_id']} ({data.get('tree_label') or data['tree_id']})"
+        )
+        lines.append(f"  Score: {data.get('score', 0)}")
+        reasons = data.get("reasons") or []
+        if reasons:
+            lines.append("  Reasons:")
+            for reason in reasons:
+                lines.append(f"    - {reason}")
+    else:
+        decision = data.get("decision") or "no_match"
+        if decision == "ambiguous":
+            lines.append("No unambiguous tree match.")
+        elif decision == "no_trees":
+            lines.append("No metric trees are configured.")
+        else:
+            lines.append("No tree match found.")
+
+    lines.append("")
+    lines.append(
+        "Inferred window: "
+        + format_period_label(
+            current_window["date_from"],
+            current_window["date_to"],
+            comparison_window["date_from"],
+            comparison_window["date_to"],
+        )
+    )
+
+    top_candidates = data.get("top_candidates") or []
+    if top_candidates:
+        lines.append("")
+        lines.append("Top candidates:")
+        for candidate in top_candidates:
+            label = candidate.get("tree_label") or candidate.get("tree_id")
+            lines.append(
+                f"  {candidate.get('tree_id')} ({label}) — score {candidate.get('score', 0)}"
+            )
+
+    return "\n".join(lines)
+
+
 def format_tree_detail(data: dict[str, Any]) -> str:
     """Format a single tree as an indented hierarchy."""
     nodes_by_id = {n["id"]: n for n in data.get("nodes", [])}
@@ -553,5 +602,97 @@ def format_comparison(tree_results: list[tuple[str, dict]], period_label: str) -
             ratio = candidate.get("delta_ratio")
             cells += _fmt_pct(ratio).rjust(col_width) if ratio is not None else "—".rjust(col_width)
         lines.append(f"    {padded}{cells}")
+
+    return "\n".join(lines)
+
+
+def format_investigation(data: dict[str, Any]) -> str:
+    """Format a bundled metric tree investigation."""
+    evaluation = data.get("evaluation") or {}
+    validation = data.get("validation") or {}
+    root_cause = data.get("root_cause") or {}
+    tree_label = (
+        evaluation.get("tree_label")
+        or validation.get("tree_label")
+        or root_cause.get("tree_label")
+        or data.get("tree_label")
+        or data.get("tree_id", "?")
+    )
+
+    lines = [f"{tree_label} Investigation", ""]
+    if data.get("period_label"):
+        lines.append(f"  Period: {data['period_label']}")
+    if data.get("segment_by_used"):
+        lines.append("  Segment cuts: " + ", ".join(data["segment_by_used"]))
+    if data.get("filters"):
+        rendered_filters = []
+        for key, values in sorted(data["filters"].items()):
+            rendered_filters.append(f"{key}={','.join(values)}")
+        if rendered_filters:
+            lines.append("  Filters: " + "; ".join(rendered_filters))
+
+    step_errors = data.get("step_errors") or {}
+
+    if validation:
+        lines.extend(["", format_tree_validation(validation)])
+    elif "validation" in step_errors:
+        lines.extend(["", f"Validation failed: {step_errors['validation']}"])
+
+    trend = data.get("trend") or {}
+    trend_evaluations = trend.get("evaluations") or []
+    if trend_evaluations:
+        lines.extend(
+            [
+                "",
+                format_trend(
+                    trend_evaluations[0].get("tree_label", tree_label),
+                    trend_evaluations,
+                    trend.get("grain", "week"),
+                ),
+            ]
+        )
+    elif "trend" in step_errors:
+        lines.extend(["", f"Trend failed: {step_errors['trend']}"])
+
+    if evaluation:
+        lines.extend(["", format_evaluation(evaluation)])
+    elif "evaluation" in step_errors:
+        lines.extend(["", f"Evaluation failed: {step_errors['evaluation']}"])
+
+    if root_cause:
+        lines.extend(["", format_root_cause(root_cause)])
+    elif "root_cause" in step_errors:
+        lines.extend(["", f"Root cause failed: {step_errors['root_cause']}"])
+
+    comparison = data.get("comparison") or {}
+    comparison_results = comparison.get("results") or []
+    if comparison_results:
+        tree_results = [
+            (result.get("tree_label", result.get("tree_id", "?")), result)
+            for result in comparison_results
+        ]
+        lines.extend(
+            [
+                "",
+                format_comparison(tree_results, comparison.get("period_label", data.get("period_label", ""))),
+            ]
+        )
+    comparison_errors = comparison.get("errors") or {}
+    if comparison_errors:
+        lines.append("")
+        lines.append("Comparison errors:")
+        for tree_id, message in sorted(comparison_errors.items()):
+            lines.append(f"  ! {tree_id}: {message}")
+
+    residual_errors = {
+        key: value
+        for key, value in step_errors.items()
+        if key not in {"validation", "trend", "evaluation", "root_cause"}
+    }
+    if residual_errors:
+        lines.append("")
+        lines.append("Other step errors:")
+        for key, message in sorted(residual_errors.items()):
+            lines.append(f"  ! {key}: {message}")
 
     return "\n".join(lines)

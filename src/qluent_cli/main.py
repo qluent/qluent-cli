@@ -196,6 +196,7 @@ questions about business performance, revenue drivers, cost breakdowns, and tren
 
 ```bash
 qluent trees list                                           # List available metric trees
+qluent trees match "Why did revenue drop last week?"        # Match a question to the best tree + infer windows
 qluent trees get <tree_id>                                  # Show tree hierarchy
 qluent trees validate <tree_id>                             # Validate tree SQL contracts and dimensions
 qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
@@ -203,11 +204,13 @@ qluent trees evaluate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-M
 qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
 qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
+qluent trees investigate revenue --period "last week"       # Validate + trend + evaluate + RCA bundle
 qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
 ```
 
 All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`
-to set the reference date.
+to set the reference date. The `investigate` command supports `--trend-as-of YYYY-MM-DD`
+for reproducible bundled trend analysis.
 
 Supported periods: "last week", "this week", "last month", "this month", "last quarter",
 "yesterday", "last 30 days", "week over week", "month over month", or explicit ISO dates.

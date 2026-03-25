@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from click.testing import CliRunner
 
 from qluent_cli.config import QluentConfig
@@ -146,3 +148,243 @@ def test_trees_validate_formats_redacted_contract_diagnostics(monkeypatch):
     assert "[metric" not in result.output
     assert "columns:" not in result.output
     assert "missing dimensions: country" in result.output
+
+
+def test_trees_match_selects_best_tree_and_infers_windows(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_list_trees(self):
+        return {
+            "trees": [
+                {
+                    "id": "revenue",
+                    "label": "Revenue",
+                    "description": "Total revenue from completed orders",
+                    "dimensions": ["channel", "country"],
+                    "nodes": [{"id": "orders", "label": "Orders", "kind": "sql_metric"}],
+                },
+                {
+                    "id": "orders",
+                    "label": "Orders",
+                    "description": "Completed order count",
+                    "dimensions": ["channel"],
+                    "nodes": [{"id": "orders", "label": "Orders", "kind": "sql_metric"}],
+                },
+            ]
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.list_trees", mock_list_trees)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "match",
+            "Why did revenue drop from 2026-03-09 to 2026-03-15 compared with 2026-03-02 to 2026-03-08?",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["matched"] is True
+    assert payload["decision"] == "matched"
+    assert payload["tree_id"] == "revenue"
+    assert payload["current_window"] == {
+        "date_from": "2026-03-09",
+        "date_to": "2026-03-15",
+    }
+    assert payload["comparison_window"] == {
+        "date_from": "2026-03-02",
+        "date_to": "2026-03-08",
+    }
+
+
+def test_trees_match_reports_ambiguous_candidates(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_list_trees(self):
+        return {
+            "trees": [
+                {"id": "revenue", "label": "Revenue", "nodes": []},
+                {"id": "orders", "label": "Orders", "nodes": []},
+            ]
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.list_trees", mock_list_trees)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "match",
+            "Compare revenue and orders",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["matched"] is False
+    assert payload["decision"] == "ambiguous"
+    assert [candidate["tree_id"] for candidate in payload["top_candidates"][:2]] == [
+        "orders",
+        "revenue",
+    ]
+
+
+def test_trees_investigate_bundles_deterministic_steps(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    evaluate_calls: list[tuple[str, str, str, str, str]] = []
+    root_cause_calls: list[dict[str, object]] = []
+
+    def mock_validate_tree(self, tree_id):
+        assert tree_id == "revenue"
+        return {
+            "tree_id": "revenue",
+            "tree_label": "Revenue",
+            "valid": True,
+            "dimensions_declared": ["channel", "country"],
+            "supported_dimensions": ["channel", "country"],
+            "leaf_nodes": [],
+            "errors": [],
+            "warnings": [],
+        }
+
+    def mock_evaluate_tree(self, tree_id, current_from, current_to, comparison_from, comparison_to):
+        evaluate_calls.append((tree_id, current_from, current_to, comparison_from, comparison_to))
+        return {
+            "tree_id": tree_id,
+            "tree_label": tree_id.title(),
+            "root_node_id": tree_id,
+            "current_window": {"date_from": current_from, "date_to": current_to},
+            "comparison_window": {"date_from": comparison_from, "date_to": comparison_to},
+            "current_value": 100,
+            "comparison_value": 90,
+            "delta_value": 10,
+            "delta_ratio": 0.1111111111,
+            "top_contributors": [],
+            "nodes": [
+                {
+                    "id": tree_id,
+                    "label": tree_id.title(),
+                    "kind": "formula",
+                    "current_value": 100,
+                    "comparison_value": 90,
+                    "delta_value": 10,
+                    "delta_ratio": 0.1111111111,
+                    "contributions": [],
+                }
+            ],
+            "warnings": [],
+        }
+
+    def mock_root_cause_tree(
+        self,
+        tree_id,
+        current_from,
+        current_to,
+        comparison_from,
+        comparison_to,
+        *,
+        segment_by,
+        filters,
+        max_depth,
+        max_branching,
+        max_segments,
+        min_contribution_share,
+    ):
+        root_cause_calls.append(
+            {
+                "tree_id": tree_id,
+                "segment_by": list(segment_by),
+                "filters": filters,
+                "max_depth": max_depth,
+                "max_branching": max_branching,
+                "max_segments": max_segments,
+                "min_contribution_share": min_contribution_share,
+            }
+        )
+        return {
+            "tree_id": tree_id,
+            "tree_label": tree_id.title(),
+            "root_node_id": tree_id,
+            "current_window": {"date_from": current_from, "date_to": current_to},
+            "comparison_window": {"date_from": comparison_from, "date_to": comparison_to},
+            "current_value": 100,
+            "comparison_value": 90,
+            "delta_value": 10,
+            "delta_ratio": 0.1111111111,
+            "dimensions_considered": list(segment_by),
+            "time_slice_grain": "day",
+            "time_slices": [],
+            "mix_shift": None,
+            "conclusion": None,
+            "findings": [],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.validate_tree", mock_validate_tree)
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.evaluate_tree", mock_evaluate_tree)
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.root_cause_tree", mock_root_cause_tree)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "investigate",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--trend-periods",
+            "2",
+            "--trend-as-of",
+            "2026-03-17",
+            "--compare-tree",
+            "orders",
+            "--filter",
+            "country=SE",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["tree_id"] == "revenue"
+    assert payload["validation"]["supported_dimensions"] == ["channel", "country"]
+    assert payload["segment_by_used"] == ["channel", "country"]
+    assert len(payload["trend"]["evaluations"]) == 2
+    assert payload["evaluation"]["tree_id"] == "revenue"
+    assert payload["root_cause"]["dimensions_considered"] == ["channel", "country"]
+    assert [item["tree_id"] for item in payload["comparison"]["results"]] == ["orders"]
+    assert payload["filters"] == {"country": ["SE"]}
+    assert payload["step_errors"] == {}
+    assert len(evaluate_calls) == 4
+    assert root_cause_calls[0]["segment_by"] == ["channel", "country"]

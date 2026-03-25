@@ -51,7 +51,9 @@ That writes `CLAUDE.md` in the current directory so Claude Code can use the CLI 
 
 ```bash
 qluent trees list
+qluent trees match "Why did revenue drop last week?"
 qluent trees trend revenue --periods 4 --grain week
+qluent trees investigate revenue --period "last week"
 qluent rca analyze revenue --period "last week"
 ```
 

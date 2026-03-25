@@ -1,0 +1,4 @@
+bin/qluent
+bin/qluent.exe
+node_modules/
+package-lock.json

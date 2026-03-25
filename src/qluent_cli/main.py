@@ -18,11 +18,22 @@ def cli() -> None:
 @click.option("--url", help="API base URL")
 @click.option("--project", help="Project UUID")
 @click.option("--email", help="User email")
-def config(api_key: str | None, url: str | None, project: str | None, email: str | None) -> None:
+@click.option(
+    "--client-safe/--no-client-safe",
+    default=None,
+    help="Redact tree formulas and SQL contract details for client-facing use.",
+)
+def config(
+    api_key: str | None,
+    url: str | None,
+    project: str | None,
+    email: str | None,
+    client_safe: bool | None,
+) -> None:
     """Configure Qluent API credentials."""
     from qluent_cli.config import CONFIG_FILE, mask_key, save_config
 
-    if not any([api_key, url, project, email]):
+    if not any([api_key, url, project, email, client_safe is not None]):
         if CONFIG_FILE.exists():
             import json
 
@@ -33,7 +44,13 @@ def config(api_key: str | None, url: str | None, project: str | None, email: str
             click.echo("No config file found. Run: qluent config --api-key qk_... --project UUID --email you@co.com")
         return
 
-    result = save_config(api_key=api_key, api_url=url, project_uuid=project, user_email=email)
+    result = save_config(
+        api_key=api_key,
+        api_url=url,
+        project_uuid=project,
+        user_email=email,
+        client_safe=client_safe,
+    )
     click.echo("Config saved to ~/.qluent/config.json")
     for k, v in result.items():
         click.echo(f"  {k}: {mask_key(v) if k == 'api_key' else v}")

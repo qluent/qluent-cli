@@ -15,8 +15,11 @@ class QluentClient:
     def __init__(self, config: QluentConfig) -> None:
         self._config = config
         self._base = f"{config.api_url}/api/v1/project/{config.project_uuid}"
+        headers = {"X-API-Key": config.api_key}
+        if config.client_safe:
+            headers["X-Qluent-Client-Safe"] = "true"
         self._client = httpx.Client(
-            headers={"X-API-Key": config.api_key},
+            headers=headers,
             timeout=120.0,
         )
 

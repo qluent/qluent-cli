@@ -6,6 +6,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 CONFIG_DIR = Path.home() / ".qluent"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -17,22 +18,32 @@ class QluentConfig:
     api_url: str
     project_uuid: str
     user_email: str
+    client_safe: bool = False
+
+
+def _parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def load_config() -> QluentConfig:
     """Load config from env vars, falling back to ~/.qluent/config.json."""
-    file_config: dict[str, str] = {}
+    file_config: dict[str, Any] = {}
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE) as f:
             file_config = json.load(f)
 
-    def get(env_var: str, file_key: str) -> str:
+    def get(env_var: str, file_key: str) -> Any:
         return os.environ.get(env_var) or file_config.get(file_key, "")
 
     api_key = get("QLUENT_API_KEY", "api_key")
     api_url = get("QLUENT_API_URL", "api_url") or "https://api.qluent.io"
     project_uuid = get("QLUENT_PROJECT_UUID", "project_uuid")
     user_email = get("QLUENT_USER_EMAIL", "user_email")
+    client_safe = _parse_bool(get("QLUENT_CLIENT_SAFE", "client_safe"))
 
     if not api_key:
         raise SystemExit("No API key configured. Run: qluent config --api-key qk_...")
@@ -46,6 +57,7 @@ def load_config() -> QluentConfig:
         api_url=api_url.rstrip("/"),
         project_uuid=project_uuid,
         user_email=user_email,
+        client_safe=client_safe,
     )
 
 
@@ -54,9 +66,10 @@ def save_config(
     api_url: str | None = None,
     project_uuid: str | None = None,
     user_email: str | None = None,
-) -> dict[str, str]:
+    client_safe: bool | None = None,
+) -> dict[str, Any]:
     """Save config values to ~/.qluent/config.json (merges with existing)."""
-    existing: dict[str, str] = {}
+    existing: dict[str, Any] = {}
     if CONFIG_FILE.exists():
         with open(CONFIG_FILE) as f:
             existing = json.load(f)
@@ -69,6 +82,8 @@ def save_config(
         existing["project_uuid"] = project_uuid
     if user_email is not None:
         existing["user_email"] = user_email
+    if client_safe is not None:
+        existing["client_safe"] = client_safe
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_DIR.chmod(0o700)

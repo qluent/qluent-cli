@@ -85,13 +85,20 @@ def format_tree_detail(data: dict[str, Any]) -> str:
     lines = [f"{data.get('label', data.get('id', '?'))}"]
     if data.get("description"):
         lines.append(f"  {data['description']}")
+    if data.get("redacted"):
+        lines.append(
+            f"  {data.get('redaction_reason') or 'Client-safe mode redacted sensitive tree fields.'}"
+        )
     lines.append("")
 
     def walk(node_id: str, indent: int, prefix: str) -> None:
         node = nodes_by_id.get(node_id)
         if not node:
             return
-        kind_tag = "sql" if node["kind"] == "sql_metric" else node.get("formula", "")
+        if node["kind"] == "sql_metric":
+            kind_tag = "sql"
+        else:
+            kind_tag = "formula" if data.get("redacted") else node.get("formula", "formula")
         lines.append(f"{prefix}{node['label']} [{kind_tag}]")
         children = node.get("children", [])
         for i, child_id in enumerate(children):
@@ -349,6 +356,10 @@ def format_tree_validation(data: dict[str, Any]) -> str:
         "",
         f"  Status: {status}",
     ]
+    if data.get("redacted"):
+        lines.append(
+            f"  {data.get('redaction_reason') or 'Client-safe mode redacted SQL contract details.'}"
+        )
 
     declared_dimensions = data.get("dimensions_declared", [])
     supported_dimensions = data.get("supported_dimensions", [])
@@ -364,11 +375,10 @@ def format_tree_validation(data: dict[str, Any]) -> str:
         lines.append("")
         lines.append("  Leaf nodes:")
         for leaf in leaf_nodes:
-            summary = (
-                f"    {leaf['label']} ({leaf['node_id']})"
-                f" [metric {leaf.get('metric_id')}]"
-                f" [{leaf.get('projection_status', 'explicit')}]"
-            )
+            summary = f"    {leaf['label']} ({leaf['node_id']})"
+            if leaf.get("metric_id") is not None:
+                summary += f" [metric {leaf.get('metric_id')}]"
+            summary += f" [{leaf.get('projection_status', 'explicit')}]"
             lines.append(summary)
             projected_columns = leaf.get("projected_columns", [])
             if projected_columns:

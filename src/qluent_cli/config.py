@@ -10,7 +10,7 @@ from typing import Any
 
 CONFIG_DIR = Path.home() / ".qluent"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-DEFAULT_API_URL = "https://app-development.qluent.com"
+DEFAULT_API_URL = "https://api.app-development.qluent.com"
 LOCAL_API_URL = "http://localhost:8001"
 
 

@@ -15,6 +15,13 @@ npm install -g @qluent/cli
 qluent setup
 ```
 
+This defaults to the Qluent test environment at `https://app-development.qluent.com`.
+For local backend development, use:
+
+```bash
+qluent setup --local
+```
+
 ## Distribution host
 
 By default the installer downloads binaries from:

@@ -51,6 +51,11 @@ def _prompt_required(
 @cli.command()
 @click.option("--api-key", help="API key (qk_...)")
 @click.option("--url", help="API base URL")
+@click.option(
+    "--local",
+    is_flag=True,
+    help="Use the local API at http://localhost:8001.",
+)
 @click.option("--project", help="Project UUID")
 @click.option("--email", help="User email")
 @click.option(
@@ -61,19 +66,31 @@ def _prompt_required(
 def config(
     api_key: str | None,
     url: str | None,
+    local: bool,
     project: str | None,
     email: str | None,
     client_safe: bool | None,
 ) -> None:
     """Configure Qluent API credentials."""
-    from qluent_cli.config import CONFIG_FILE, default_client_safe, save_config
+    from qluent_cli.config import (
+        CONFIG_FILE,
+        DEFAULT_API_URL,
+        LOCAL_API_URL,
+        default_client_safe,
+        save_config,
+    )
 
-    if not any([api_key, url, project, email, client_safe is not None]):
+    if url and local:
+        raise click.ClickException("Use either --url or --local, not both.")
+
+    effective_url = LOCAL_API_URL if local else url
+
+    if not any([api_key, effective_url, project, email, client_safe is not None]):
         if CONFIG_FILE.exists():
             data = _load_saved_config()
             if "client_safe" not in data:
                 data["client_safe"] = default_client_safe(
-                    str(data.get("api_url") or "https://api.qluent.io")
+                    str(data.get("api_url") or DEFAULT_API_URL)
                 )
             _print_saved_config(data)
         else:
@@ -82,14 +99,14 @@ def config(
 
     result = save_config(
         api_key=api_key,
-        api_url=url,
+        api_url=effective_url,
         project_uuid=project,
         user_email=email,
         client_safe=client_safe,
     )
     if "client_safe" not in result:
         result["client_safe"] = default_client_safe(
-            str(result.get("api_url") or "https://api.qluent.io")
+            str(result.get("api_url") or DEFAULT_API_URL)
         )
     click.echo("Config saved to ~/.qluent/config.json")
     _print_saved_config(result)
@@ -114,10 +131,20 @@ def _write_claude_file(path: Path, *, force: bool) -> str:
     show_default=True,
     help="Where to write the Claude Code instructions file.",
 )
+@click.option(
+    "--local",
+    is_flag=True,
+    help="Use the local API at http://localhost:8001.",
+)
 @click.option("--force", is_flag=True, help="Overwrite an existing CLAUDE.md without prompting.")
-def setup(claude_path: str, force: bool) -> None:
+def setup(claude_path: str, local: bool, force: bool) -> None:
     """Interactive first-run setup for client installations."""
-    from qluent_cli.config import default_client_safe, save_config
+    from qluent_cli.config import (
+        DEFAULT_API_URL,
+        LOCAL_API_URL,
+        default_client_safe,
+        save_config,
+    )
 
     existing = _load_saved_config()
 
@@ -138,7 +165,7 @@ def setup(claude_path: str, force: bool) -> None:
     )
     api_url = _prompt_required(
         "API base URL",
-        default=str(existing.get("api_url") or "https://api.qluent.io"),
+        default=str(existing.get("api_url") or (LOCAL_API_URL if local else DEFAULT_API_URL)),
         show_default=True,
     )
 

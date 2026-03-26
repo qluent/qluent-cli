@@ -7,14 +7,14 @@ This package is a thin npm installer for the platform-specific `qluent` binary.
 Release flow:
 
 1. Build the standalone `qluent` binaries.
-2. Upload them to the binary distribution host.
+2. Publish them as GitHub Release assets for the matching tag.
 3. Publish the npm package with the matching version.
 4. Smoke-test `npm install -g @qluent/cli`.
 
 The npm installer expects binaries at:
 
 ```text
-https://downloads.qluent.io/cli/v<VERSION>/
+https://github.com/qluent/qluent-cli/releases/download/v<VERSION>/
 ```
 
 With these names:
@@ -61,31 +61,27 @@ PyInstaller builds for the current OS/architecture only, so run the build once p
 
 You can also use the standalone GitHub Actions workflow in [.github/workflows/qluent-cli-binaries.yml](../.github/workflows/qluent-cli-binaries.yml) to build native artifacts on macOS, Linux, and Windows runners.
 
-## Step 2: Upload binaries
+## Step 2: Publish GitHub Release assets
 
-Upload each binary to:
+The release workflow publishes each binary and checksum file to the tag's GitHub Release.
+For `v0.1.1`, the final URLs look like:
 
 ```text
-https://downloads.qluent.io/cli/v0.1.0/
+https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-darwin-arm64
+https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-linux-x64
+https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-windows-x64.exe
 ```
 
-Example final URLs:
+With checksum sidecars:
 
 ```text
-https://downloads.qluent.io/cli/v0.1.0/qluent-darwin-arm64
-https://downloads.qluent.io/cli/v0.1.0/qluent-linux-x64
-https://downloads.qluent.io/cli/v0.1.0/qluent-windows-x64.exe
-```
-
-Upload the matching checksum sidecars too:
-
-```text
-https://downloads.qluent.io/cli/v0.1.0/qluent-darwin-arm64.sha256
-https://downloads.qluent.io/cli/v0.1.0/qluent-linux-x64.sha256
-https://downloads.qluent.io/cli/v0.1.0/qluent-windows-x64.exe.sha256
+https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-darwin-arm64.sha256
+https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-linux-x64.sha256
+https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-windows-x64.exe.sha256
 ```
 
 The npm installer verifies each downloaded binary against its sidecar before installation.
+If the workflow succeeds but no release appears, confirm the repository allows Actions to create releases.
 
 ## Step 3: Publish npm package
 
@@ -114,7 +110,7 @@ qluent setup
 Also verify override paths:
 
 ```bash
-QLUENT_CLI_DIST_BASE_URL=https://your-staging-host npm install -g @qluent/cli
+QLUENT_CLI_DIST_BASE_URL=https://github.com/qluent/qluent-cli/releases/download npm install -g @qluent/cli
 ```
 
 and:
@@ -131,10 +127,10 @@ QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD=1 QLUENT_CLI_DIST_BASE_URL=http://localhost:9
 
 ## Rollback
 
-If the npm package is published but binaries are missing or broken:
+If the npm package is published but release assets are missing or broken:
 
 1. unpublish or deprecate the npm version
-2. fix and re-upload binaries
+2. fix and re-publish the GitHub Release assets
 3. republish or cut a patch release
 
-Keep the npm package version and binary folder version aligned.
+Keep the npm package version and release tag aligned.

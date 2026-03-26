@@ -65,7 +65,7 @@ CLI repo root:
 
 ```bash
 uv build
-pipx install dist/qluent_cli-0.1.0-py3-none-any.whl
+pipx install dist/qluent_cli-0.1.1-py3-none-any.whl
 ```
 
 ## Building Release Binaries
@@ -127,3 +127,4 @@ scripts/local_smoke_test.sh
 
 The npm wrapper lives in [npm](./npm). It is designed to download platform-specific release binaries from your distribution host.
 It requires HTTPS downloads by default and verifies each binary against its `.sha256` sidecar before installation.
+The default distribution host is the GitHub Releases page for `qluent/qluent-cli`.

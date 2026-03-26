@@ -20,7 +20,7 @@ qluent setup
 By default the installer downloads binaries from:
 
 ```text
-https://downloads.qluent.io/cli/v<VERSION>/
+https://github.com/qluent/qluent-cli/releases/download/v<VERSION>/
 ```
 
 Override for testing or private staging:

@@ -4,7 +4,8 @@ const http = require("http");
 const https = require("https");
 const path = require("path");
 
-const DEFAULT_DIST_BASE_URL = "https://downloads.qluent.io/cli";
+const DEFAULT_DIST_BASE_URL =
+  "https://github.com/qluent/qluent-cli/releases/download";
 
 function platformArtifact({
   platform = process.platform,

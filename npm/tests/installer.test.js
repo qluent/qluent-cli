@@ -22,7 +22,10 @@ test("resolveDownloadUrl uses the default HTTPS host", () => {
     arch: "arm64",
   });
 
-  assert.equal(url, "https://downloads.qluent.io/cli/v0.1.0/qluent-darwin-arm64");
+  assert.equal(
+    url,
+    "https://github.com/qluent/qluent-cli/releases/download/v0.1.0/qluent-darwin-arm64"
+  );
 });
 
 test("resolveDownloadUrl rejects insecure HTTP URLs by default", () => {
@@ -78,8 +81,10 @@ test("parseChecksumFile supports common sha256 formats", () => {
 
 test("resolveChecksumUrl appends .sha256", () => {
   assert.equal(
-    resolveChecksumUrl("https://downloads.qluent.io/cli/v0.1.0/qluent-darwin-arm64"),
-    "https://downloads.qluent.io/cli/v0.1.0/qluent-darwin-arm64.sha256"
+    resolveChecksumUrl(
+      "https://github.com/qluent/qluent-cli/releases/download/v0.1.0/qluent-darwin-arm64"
+    ),
+    "https://github.com/qluent/qluent-cli/releases/download/v0.1.0/qluent-darwin-arm64.sha256"
   );
 });
 
@@ -99,6 +104,12 @@ test("platformArtifact matches the binary naming convention", () => {
 });
 
 test("assertSecureUrl accepts HTTPS and rejects HTTP by default", () => {
-  assert.equal(assertSecureUrl("https://downloads.qluent.io/cli").toString(), "https://downloads.qluent.io/cli");
-  assert.throws(() => assertSecureUrl("http://downloads.qluent.io/cli"), /Refusing insecure download URL/);
+  assert.equal(
+    assertSecureUrl("https://github.com/qluent/qluent-cli/releases/download").toString(),
+    "https://github.com/qluent/qluent-cli/releases/download"
+  );
+  assert.throws(
+    () => assertSecureUrl("http://github.com/qluent/qluent-cli/releases/download"),
+    /Refusing insecure download URL/
+  );
 });

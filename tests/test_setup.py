@@ -77,6 +77,7 @@ def test_setup_local_flag_prefills_local_api_url(monkeypatch, tmp_path):
             "qk_test\n"
             "project-123\n"
             "user@example.com\n"
+            "fake-jwt-token\n"
             "n\n"
         ),
     )
@@ -85,6 +86,7 @@ def test_setup_local_flag_prefills_local_api_url(monkeypatch, tmp_path):
     saved = json.loads(config_file.read_text())
     assert saved["api_url"] == config_module.LOCAL_API_URL
     assert saved["client_safe"] is False
+    assert saved["bearer_token"] == "fake-jwt-token"
 
 
 def test_claude_init_writes_file(monkeypatch, tmp_path):

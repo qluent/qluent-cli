@@ -10,6 +10,8 @@ from typing import Any
 
 CONFIG_DIR = Path.home() / ".qluent"
 CONFIG_FILE = CONFIG_DIR / "config.json"
+DEFAULT_API_URL = "https://app-development.qluent.com"
+LOCAL_API_URL = "http://localhost:8001"
 
 
 @dataclass
@@ -48,7 +50,7 @@ def load_config() -> QluentConfig:
         return os.environ.get(env_var) or file_config.get(file_key, "")
 
     api_key = get("QLUENT_API_KEY", "api_key")
-    api_url = get("QLUENT_API_URL", "api_url") or "https://api.qluent.io"
+    api_url = get("QLUENT_API_URL", "api_url") or DEFAULT_API_URL
     project_uuid = get("QLUENT_PROJECT_UUID", "project_uuid")
     user_email = get("QLUENT_USER_EMAIL", "user_email")
     if "QLUENT_CLIENT_SAFE" in os.environ:

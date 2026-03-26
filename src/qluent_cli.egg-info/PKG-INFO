@@ -1,3 +1,14 @@
+Metadata-Version: 2.4
+Name: qluent-cli
+Version: 0.1.1
+Summary: CLI for Qluent metric tree analysis
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: click>=8.0
+Requires-Dist: httpx>=0.25
+Provides-Extra: build
+Requires-Dist: pyinstaller>=6.0; extra == "build"
+
 # Qluent CLI
 
 `qluent` is a client-facing CLI for deterministic metric-tree analysis and root-cause analysis.

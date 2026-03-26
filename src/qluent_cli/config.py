@@ -21,6 +21,7 @@ class QluentConfig:
     project_uuid: str
     user_email: str
     client_safe: bool = False
+    bearer_token: str = ""
 
 
 def _parse_bool(value: Any) -> bool:
@@ -53,6 +54,7 @@ def load_config() -> QluentConfig:
     api_url = get("QLUENT_API_URL", "api_url") or DEFAULT_API_URL
     project_uuid = get("QLUENT_PROJECT_UUID", "project_uuid")
     user_email = get("QLUENT_USER_EMAIL", "user_email")
+    bearer_token = get("QLUENT_BEARER_TOKEN", "bearer_token")
     if "QLUENT_CLIENT_SAFE" in os.environ:
         client_safe = _parse_bool(os.environ["QLUENT_CLIENT_SAFE"])
     elif "client_safe" in file_config:
@@ -60,8 +62,8 @@ def load_config() -> QluentConfig:
     else:
         client_safe = default_client_safe(api_url)
 
-    if not api_key:
-        raise SystemExit("No API key configured. Run: qluent config --api-key qk_...")
+    if not api_key and not bearer_token:
+        raise SystemExit("No API key or bearer token configured. Run: qluent config --api-key qk_... or --bearer-token <jwt>")
     if not project_uuid:
         raise SystemExit("No project configured. Run: qluent config --project UUID")
     if not user_email:
@@ -73,6 +75,7 @@ def load_config() -> QluentConfig:
         project_uuid=project_uuid,
         user_email=user_email,
         client_safe=client_safe,
+        bearer_token=bearer_token,
     )
 
 
@@ -82,6 +85,7 @@ def save_config(
     project_uuid: str | None = None,
     user_email: str | None = None,
     client_safe: bool | None = None,
+    bearer_token: str | None = None,
 ) -> dict[str, Any]:
     """Save config values to ~/.qluent/config.json (merges with existing)."""
     existing: dict[str, Any] = {}
@@ -99,6 +103,8 @@ def save_config(
         existing["user_email"] = user_email
     if client_safe is not None:
         existing["client_safe"] = client_safe
+    if bearer_token is not None:
+        existing["bearer_token"] = bearer_token
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_DIR.chmod(0o700)

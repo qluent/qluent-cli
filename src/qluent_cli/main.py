@@ -28,7 +28,7 @@ def _print_saved_config(data: dict[str, object]) -> None:
     from qluent_cli.config import mask_key
 
     for key, value in data.items():
-        click.echo(f"  {key}: {mask_key(value) if key == 'api_key' else value}")
+        click.echo(f"  {key}: {mask_key(value) if key in ('api_key', 'bearer_token') else value}")
 
 
 def _prompt_required(
@@ -63,6 +63,7 @@ def _prompt_required(
     default=None,
     help="Redact tree formulas and SQL contract details for client-facing use.",
 )
+@click.option("--bearer-token", help="Bearer token for local backend auth (Firebase JWT).")
 def config(
     api_key: str | None,
     url: str | None,
@@ -70,6 +71,7 @@ def config(
     project: str | None,
     email: str | None,
     client_safe: bool | None,
+    bearer_token: str | None,
 ) -> None:
     """Configure Qluent API credentials."""
     from qluent_cli.config import (
@@ -85,7 +87,7 @@ def config(
 
     effective_url = LOCAL_API_URL if local else url
 
-    if not any([api_key, effective_url, project, email, client_safe is not None]):
+    if not any([api_key, effective_url, project, email, client_safe is not None, bearer_token]):
         if CONFIG_FILE.exists():
             data = _load_saved_config()
             if "client_safe" not in data:
@@ -103,6 +105,7 @@ def config(
         project_uuid=project,
         user_email=email,
         client_safe=client_safe,
+        bearer_token=bearer_token,
     )
     if "client_safe" not in result:
         result["client_safe"] = default_client_safe(

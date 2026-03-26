@@ -83,6 +83,22 @@ function getTransport(url) {
 
 const MAX_BINARY_SIZE = 200 * 1024 * 1024; // 200 MB
 const MAX_CHECKSUM_SIZE = 1024; // 1 KB
+const MAX_SIGNATURE_SIZE = 256; // base64-encoded Ed25519 sig is 88 bytes
+
+// Ed25519 SPKI DER encoding: 12-byte fixed prefix (OID + tag + length) followed
+// by 32-byte raw key material. Lets us embed compact hex keys and reconstruct
+// the full DER at verification time. See RFC 8410.
+const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
+
+// Trusted Ed25519 public keys (raw 32-byte hex).
+// Multiple keys supported for rotation: verification succeeds if ANY key matches.
+// PLACEHOLDER: replace with the real public key after generating the signing keypair.
+const TRUSTED_PUBLIC_KEYS = [
+  "0000000000000000000000000000000000000000000000000000000000000000",
+];
+
+// Set to true once all active releases include .sha256.sig files.
+const SIGNATURE_REQUIRED = false;
 
 function download(url, destination, { env = process.env, redirectsRemaining = 5, maxSize = MAX_BINARY_SIZE } = {}) {
   const safeUrl = assertSecureUrl(url, { env }).toString();
@@ -230,6 +246,46 @@ function verifyFileChecksum(filePath, expectedHash) {
   }
 }
 
+function resolveSignatureUrl(checksumUrl) {
+  return `${checksumUrl}.sig`;
+}
+
+function buildEd25519PublicKey(rawHex) {
+  const rawBytes = Buffer.from(rawHex, "hex");
+  if (rawBytes.length !== 32) {
+    throw new Error(
+      `Invalid Ed25519 public key length: expected 32 bytes, got ${rawBytes.length}`
+    );
+  }
+  const der = Buffer.concat([ED25519_SPKI_PREFIX, rawBytes]);
+  return crypto.createPublicKey({ key: der, format: "der", type: "spki" });
+}
+
+function verifySignature(
+  checksumContent,
+  signatureBase64,
+  { trustedKeys = TRUSTED_PUBLIC_KEYS } = {}
+) {
+  const signatureBuffer = Buffer.from(signatureBase64.trim(), "base64");
+  if (signatureBuffer.length !== 64) {
+    throw new Error(
+      `Invalid signature length: expected 64 bytes, got ${signatureBuffer.length}`
+    );
+  }
+  const messageBuffer = Buffer.from(checksumContent);
+
+  for (const keyHex of trustedKeys) {
+    const publicKey = buildEd25519PublicKey(keyHex);
+    if (crypto.verify(null, messageBuffer, publicKey, signatureBuffer)) {
+      return true;
+    }
+  }
+
+  throw new Error(
+    "Signature verification failed: no trusted key could verify the signature"
+  );
+}
+
 async function installBinary({
   version,
   env = process.env,
@@ -237,6 +293,7 @@ async function installBinary({
   platform = process.platform,
   arch = process.arch,
   logger = console,
+  trustedKeys = TRUSTED_PUBLIC_KEYS,
 } = {}) {
   if (!version) {
     throw new Error("version is required");
@@ -273,6 +330,35 @@ async function installBinary({
 
   try {
     const checksumBody = await downloadText(checksumUrl, { env });
+
+    if (env.QLUENT_CLI_SKIP_SIGNATURE_VERIFICATION === "1") {
+      logger.log(
+        "WARNING: QLUENT_CLI_SKIP_SIGNATURE_VERIFICATION is set. " +
+          "Signature verification is disabled."
+      );
+    } else {
+      const signatureUrl = resolveSignatureUrl(checksumUrl);
+      try {
+        const signatureBody = await downloadText(signatureUrl, {
+          env,
+          maxSize: MAX_SIGNATURE_SIZE,
+        });
+        verifySignature(checksumBody, signatureBody, { trustedKeys });
+        logger.log("Signature verification passed");
+      } catch (sigError) {
+        if (
+          SIGNATURE_REQUIRED ||
+          !sigError.message.includes("Download failed with status")
+        ) {
+          throw sigError;
+        }
+        logger.log(
+          "WARNING: Signature file not found. " +
+            "Signature verification will be required in a future release."
+        );
+      }
+    }
+
     const expectedChecksum = parseChecksumFile(
       checksumBody,
       path.basename(binaryUrl)
@@ -293,8 +379,11 @@ module.exports = {
   DEFAULT_DIST_BASE_URL,
   MAX_BINARY_SIZE,
   MAX_CHECKSUM_SIZE,
+  MAX_SIGNATURE_SIZE,
+  SIGNATURE_REQUIRED,
   allowInsecureDownload,
   assertSecureUrl,
+  buildEd25519PublicKey,
   download,
   downloadText,
   installBinary,
@@ -302,6 +391,8 @@ module.exports = {
   platformArtifact,
   resolveChecksumUrl,
   resolveDownloadUrl,
+  resolveSignatureUrl,
   sha256File,
   verifyFileChecksum,
+  verifySignature,
 };

@@ -38,6 +38,8 @@ jobs:
 
       - name: Build standalone binary
         run: python -m qluent_cli.build_binary
+        env:
+          QLUENT_SIGNING_PRIVATE_KEY: ${{ secrets.QLUENT_SIGNING_PRIVATE_KEY }}
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4

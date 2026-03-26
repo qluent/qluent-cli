@@ -9,8 +9,11 @@ const path = require("path");
 const {
   MAX_BINARY_SIZE,
   MAX_CHECKSUM_SIZE,
+  MAX_SIGNATURE_SIZE,
+  SIGNATURE_REQUIRED,
   allowInsecureDownload,
   assertSecureUrl,
+  buildEd25519PublicKey,
   download,
   downloadText,
   installBinary,
@@ -18,8 +21,10 @@ const {
   platformArtifact,
   resolveChecksumUrl,
   resolveDownloadUrl,
+  resolveSignatureUrl,
   sha256File,
   verifyFileChecksum,
+  verifySignature,
 } = require("../lib/installer");
 
 // ---------------------------------------------------------------------------
@@ -64,6 +69,23 @@ function captureLogger() {
     messages,
     log: (msg) => messages.push(msg),
   };
+}
+
+/** Generate an Ed25519 keypair for testing. */
+function generateSigningKeyPair() {
+  const kp = crypto.generateKeyPairSync("ed25519");
+  const pubDer = kp.publicKey.export({ type: "spki", format: "der" });
+  return { privateKey: kp.privateKey, publicKeyHex: pubDer.slice(12).toString("hex") };
+}
+
+/** Sign content with an Ed25519 private key, return base64 string. */
+function signContent(content, privateKey) {
+  return crypto.sign(null, Buffer.from(content), privateKey).toString("base64");
+}
+
+/** Env that skips signature verification (for tests not focused on signatures). */
+function insecureEnvSkipSig(extra = {}) {
+  return insecureEnv({ QLUENT_CLI_SKIP_SIGNATURE_VERIFICATION: "1", ...extra });
 }
 
 // ---------------------------------------------------------------------------
@@ -356,7 +378,7 @@ test("installBinary writes to .tmp first and renames on success", async () => {
   try {
     const dest = await installBinary({
       version: "1.0.0",
-      env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+      env: insecureEnvSkipSig({ QLUENT_CLI_DIST_BASE_URL: server.url }),
       binDir,
       platform: "darwin",
       arch: "arm64",
@@ -398,7 +420,7 @@ test("installBinary cleans up .tmp and leaves no final binary on checksum mismat
       () =>
         installBinary({
           version: "1.0.0",
-          env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+          env: insecureEnvSkipSig({ QLUENT_CLI_DIST_BASE_URL: server.url }),
           binDir,
           platform: "darwin",
           arch: "arm64",
@@ -436,7 +458,7 @@ test("installBinary cleans up .tmp when checksum download fails", async () => {
       () =>
         installBinary({
           version: "1.0.0",
-          env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+          env: insecureEnvSkipSig({ QLUENT_CLI_DIST_BASE_URL: server.url }),
           binDir,
           platform: "darwin",
           arch: "arm64",
@@ -480,7 +502,7 @@ test("temp file is written with mode 0o600 (not executable)", async () => {
   try {
     await installBinary({
       version: "1.0.0",
-      env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+      env: insecureEnvSkipSig({ QLUENT_CLI_DIST_BASE_URL: server.url }),
       binDir,
       platform: "linux",
       arch: "x64",
@@ -521,14 +543,14 @@ test("installBinary logs a warning when QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD is se
   try {
     await installBinary({
       version: "1.0.0",
-      env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+      env: insecureEnvSkipSig({ QLUENT_CLI_DIST_BASE_URL: server.url }),
       binDir,
       platform: "darwin",
       arch: "arm64",
       logger,
     });
 
-    const warningMsg = logger.messages.find((m) => m.includes("WARNING"));
+    const warningMsg = logger.messages.find((m) => m.includes("QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD"));
     assert.ok(warningMsg, "expected a WARNING message in the logs");
     assert.match(warningMsg, /QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD/);
     assert.match(warningMsg, /local development/);
@@ -741,7 +763,7 @@ test("installBinary uses .exe suffix on win32", async () => {
   try {
     const dest = await installBinary({
       version: "1.0.0",
-      env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+      env: insecureEnvSkipSig({ QLUENT_CLI_DIST_BASE_URL: server.url }),
       binDir,
       platform: "win32",
       arch: "x64",
@@ -751,6 +773,350 @@ test("installBinary uses .exe suffix on win32", async () => {
     assert.ok(dest.endsWith("qluent.exe"));
     assert.ok(fs.existsSync(dest));
     assert.equal(fs.existsSync(`${dest}.tmp`), false);
+  } finally {
+    server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Signature verification – unit tests
+// ---------------------------------------------------------------------------
+
+test("resolveSignatureUrl appends .sig to checksum URL", () => {
+  assert.equal(
+    resolveSignatureUrl(
+      "https://github.com/qluent/qluent-cli/releases/download/v0.1.0/qluent-darwin-arm64.sha256"
+    ),
+    "https://github.com/qluent/qluent-cli/releases/download/v0.1.0/qluent-darwin-arm64.sha256.sig"
+  );
+});
+
+test("buildEd25519PublicKey creates a valid key from raw hex", () => {
+  const { publicKeyHex } = generateSigningKeyPair();
+  const key = buildEd25519PublicKey(publicKeyHex);
+  assert.equal(key.type, "public");
+  assert.equal(key.asymmetricKeyType, "ed25519");
+});
+
+test("buildEd25519PublicKey rejects wrong-length hex", () => {
+  assert.throws(
+    () => buildEd25519PublicKey("abcd"),
+    /expected 32 bytes/
+  );
+});
+
+test("verifySignature succeeds with a valid signature", () => {
+  const { privateKey, publicKeyHex } = generateSigningKeyPair();
+  const content = "abc123  qluent-darwin-arm64\n";
+  const sig = signContent(content, privateKey);
+
+  assert.equal(
+    verifySignature(content, sig, { trustedKeys: [publicKeyHex] }),
+    true
+  );
+});
+
+test("verifySignature fails with an untrusted key", () => {
+  const signer = generateSigningKeyPair();
+  const untrusted = generateSigningKeyPair();
+  const content = "abc123  qluent-darwin-arm64\n";
+  const sig = signContent(content, signer.privateKey);
+
+  assert.throws(
+    () => verifySignature(content, sig, { trustedKeys: [untrusted.publicKeyHex] }),
+    /no trusted key could verify/
+  );
+});
+
+test("verifySignature fails with tampered content", () => {
+  const { privateKey, publicKeyHex } = generateSigningKeyPair();
+  const original = "abc123  qluent-darwin-arm64\n";
+  const sig = signContent(original, privateKey);
+  const tampered = "def456  qluent-darwin-arm64\n";
+
+  assert.throws(
+    () => verifySignature(tampered, sig, { trustedKeys: [publicKeyHex] }),
+    /no trusted key could verify/
+  );
+});
+
+test("verifySignature succeeds if any key in the trusted set matches (rotation)", () => {
+  const oldKey = generateSigningKeyPair();
+  const newKey = generateSigningKeyPair();
+  const content = "abc123  qluent-darwin-arm64\n";
+
+  // Signed with old key, both keys trusted
+  const sig = signContent(content, oldKey.privateKey);
+  assert.equal(
+    verifySignature(content, sig, {
+      trustedKeys: [newKey.publicKeyHex, oldKey.publicKeyHex],
+    }),
+    true
+  );
+
+  // Signed with new key, both keys trusted
+  const sig2 = signContent(content, newKey.privateKey);
+  assert.equal(
+    verifySignature(content, sig2, {
+      trustedKeys: [newKey.publicKeyHex, oldKey.publicKeyHex],
+    }),
+    true
+  );
+});
+
+test("verifySignature rejects invalid base64", () => {
+  const { publicKeyHex } = generateSigningKeyPair();
+  assert.throws(
+    () => verifySignature("content", "not-valid-base64!!!", { trustedKeys: [publicKeyHex] }),
+    /Invalid signature length/
+  );
+});
+
+test("verifySignature rejects truncated signature", () => {
+  const { privateKey, publicKeyHex } = generateSigningKeyPair();
+  const content = "test content";
+  const fullSig = signContent(content, privateKey);
+  const truncated = Buffer.from(fullSig, "base64").slice(0, 32).toString("base64");
+
+  assert.throws(
+    () => verifySignature(content, truncated, { trustedKeys: [publicKeyHex] }),
+    /Invalid signature length/
+  );
+});
+
+test("MAX_SIGNATURE_SIZE has a sane default", () => {
+  assert.equal(MAX_SIGNATURE_SIZE, 256);
+});
+
+test("SIGNATURE_REQUIRED is false during transition", () => {
+  assert.equal(SIGNATURE_REQUIRED, false);
+});
+
+// ---------------------------------------------------------------------------
+// Signature verification – installBinary integration tests
+// ---------------------------------------------------------------------------
+
+/** Create a test server handler that serves binary, checksum, and signature. */
+function signedReleaseHandler({ binaryContent, artifactName, signingKey }) {
+  const checksum = sha256(binaryContent);
+  const checksumBody = `${checksum}  ${artifactName}\n`;
+  const signature = signContent(checksumBody, signingKey.privateKey);
+
+  return (req, res) => {
+    if (req.url.endsWith(".sha256.sig")) {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(signature + "\n");
+    } else if (req.url.endsWith(".sha256")) {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(checksumBody);
+    } else {
+      res.writeHead(200);
+      res.end(binaryContent);
+    }
+  };
+}
+
+test("installBinary succeeds end-to-end with valid signature", async () => {
+  const server = await createTestServer();
+  const tempDir = makeTempDir();
+  const binDir = path.join(tempDir, "bin");
+  const signingKey = generateSigningKeyPair();
+  const binaryContent = Buffer.from("signed-binary");
+  const artifactName = platformArtifact({ platform: "darwin", arch: "arm64" });
+  const logger = captureLogger();
+
+  server.setHandler(
+    signedReleaseHandler({ binaryContent, artifactName, signingKey })
+  );
+
+  try {
+    const dest = await installBinary({
+      version: "1.0.0",
+      env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+      binDir,
+      platform: "darwin",
+      arch: "arm64",
+      logger,
+      trustedKeys: [signingKey.publicKeyHex],
+    });
+
+    assert.ok(fs.existsSync(dest));
+    assert.deepEqual(fs.readFileSync(dest), binaryContent);
+    assert.ok(logger.messages.some((m) => m.includes("Signature verification passed")));
+  } finally {
+    server.close();
+  }
+});
+
+test("installBinary fails when signature is from wrong key", async () => {
+  const server = await createTestServer();
+  const tempDir = makeTempDir();
+  const binDir = path.join(tempDir, "bin");
+  const signingKey = generateSigningKeyPair();
+  const wrongKey = generateSigningKeyPair();
+  const binaryContent = Buffer.from("wrong-key-binary");
+  const artifactName = platformArtifact({ platform: "darwin", arch: "arm64" });
+
+  // Server signs with signingKey, but installer trusts wrongKey
+  server.setHandler(
+    signedReleaseHandler({ binaryContent, artifactName, signingKey })
+  );
+
+  try {
+    await assert.rejects(
+      () =>
+        installBinary({
+          version: "1.0.0",
+          env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+          binDir,
+          platform: "darwin",
+          arch: "arm64",
+          logger: captureLogger(),
+          trustedKeys: [wrongKey.publicKeyHex],
+        }),
+      /no trusted key could verify/
+    );
+
+    // .tmp must be cleaned up
+    assert.equal(fs.existsSync(path.join(binDir, "qluent")), false);
+    assert.equal(fs.existsSync(path.join(binDir, "qluent.tmp")), false);
+  } finally {
+    server.close();
+  }
+});
+
+test("installBinary cleans up .tmp on signature verification failure", async () => {
+  const server = await createTestServer();
+  const tempDir = makeTempDir();
+  const binDir = path.join(tempDir, "bin");
+  const signingKey = generateSigningKeyPair();
+  const binaryContent = Buffer.from("tamper-test");
+  const artifactName = platformArtifact({ platform: "linux", arch: "x64" });
+
+  // Serve a valid binary and checksum, but a signature over different content
+  const checksum = sha256(binaryContent);
+  const checksumBody = `${checksum}  ${artifactName}\n`;
+  const badSig = signContent("tampered checksum content", signingKey.privateKey);
+
+  server.setHandler((req, res) => {
+    if (req.url.endsWith(".sha256.sig")) {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(badSig + "\n");
+    } else if (req.url.endsWith(".sha256")) {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(checksumBody);
+    } else {
+      res.writeHead(200);
+      res.end(binaryContent);
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        installBinary({
+          version: "1.0.0",
+          env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+          binDir,
+          platform: "linux",
+          arch: "x64",
+          logger: captureLogger(),
+          trustedKeys: [signingKey.publicKeyHex],
+        }),
+      /no trusted key could verify/
+    );
+
+    assert.equal(fs.existsSync(path.join(binDir, "qluent")), false);
+    assert.equal(fs.existsSync(path.join(binDir, "qluent.tmp")), false);
+  } finally {
+    server.close();
+  }
+});
+
+test("installBinary warns but succeeds when .sig is missing and SIGNATURE_REQUIRED is false", async () => {
+  const server = await createTestServer();
+  const tempDir = makeTempDir();
+  const binDir = path.join(tempDir, "bin");
+  const binaryContent = Buffer.from("unsigned-binary");
+  const checksum = sha256(binaryContent);
+  const artifactName = platformArtifact({ platform: "darwin", arch: "arm64" });
+  const logger = captureLogger();
+
+  // Serve binary and checksum, but 404 for .sig
+  server.setHandler((req, res) => {
+    if (req.url.endsWith(".sha256.sig")) {
+      res.writeHead(404);
+      res.end("not found");
+    } else if (req.url.endsWith(".sha256")) {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(`${checksum}  ${artifactName}\n`);
+    } else {
+      res.writeHead(200);
+      res.end(binaryContent);
+    }
+  });
+
+  try {
+    const dest = await installBinary({
+      version: "1.0.0",
+      env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+      binDir,
+      platform: "darwin",
+      arch: "arm64",
+      logger,
+      trustedKeys: [generateSigningKeyPair().publicKeyHex],
+    });
+
+    assert.ok(fs.existsSync(dest));
+    assert.ok(
+      logger.messages.some((m) => m.includes("Signature file not found")),
+      "expected a warning about missing signature"
+    );
+  } finally {
+    server.close();
+  }
+});
+
+test("installBinary skips signature check when QLUENT_CLI_SKIP_SIGNATURE_VERIFICATION=1", async () => {
+  const server = await createTestServer();
+  const tempDir = makeTempDir();
+  const binDir = path.join(tempDir, "bin");
+  const binaryContent = Buffer.from("skip-sig-binary");
+  const checksum = sha256(binaryContent);
+  const artifactName = platformArtifact({ platform: "darwin", arch: "arm64" });
+  const logger = captureLogger();
+
+  // No .sig served at all — would fail without the skip flag
+  server.setHandler((req, res) => {
+    if (req.url.endsWith(".sha256")) {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end(`${checksum}  ${artifactName}\n`);
+    } else {
+      res.writeHead(200);
+      res.end(binaryContent);
+    }
+  });
+
+  try {
+    const dest = await installBinary({
+      version: "1.0.0",
+      env: insecureEnvSkipSig({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+      binDir,
+      platform: "darwin",
+      arch: "arm64",
+      logger,
+    });
+
+    assert.ok(fs.existsSync(dest));
+    assert.ok(
+      logger.messages.some((m) => m.includes("QLUENT_CLI_SKIP_SIGNATURE_VERIFICATION")),
+      "expected a warning about skipped signature verification"
+    );
+    // Should NOT have a "Signature verification passed" message
+    assert.equal(
+      logger.messages.some((m) => m.includes("Signature verification passed")),
+      false
+    );
   } finally {
     server.close();
   }

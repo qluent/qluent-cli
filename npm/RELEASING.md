@@ -80,7 +80,15 @@ https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-linux-x64.s
 https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-windows-x64.exe.sha256
 ```
 
-The npm installer verifies each downloaded binary against its sidecar before installation.
+When the `QLUENT_SIGNING_PRIVATE_KEY` secret is set, the build also produces
+Ed25519 signature sidecars (`.sha256.sig`) that the npm installer verifies:
+
+```text
+https://github.com/qluent/qluent-cli/releases/download/v0.1.1/qluent-darwin-arm64.sha256.sig
+```
+
+The npm installer verifies each downloaded binary against its checksum sidecar
+and (when available) the Ed25519 signature before installation.
 If the workflow succeeds but no release appears, confirm the repository allows Actions to create releases.
 
 ## Step 3: Publish npm package
@@ -124,6 +132,43 @@ If you need to test an insecure local `http://` host during development, use:
 ```bash
 QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD=1 QLUENT_CLI_DIST_BASE_URL=http://localhost:9000 npm install -g @qluent/cli
 ```
+
+## Signing key management
+
+Release binaries are signed with Ed25519. The private key is stored as the
+GitHub Actions secret `QLUENT_SIGNING_PRIVATE_KEY` (PEM format). The public key
+is embedded in `lib/installer.js` in the `TRUSTED_PUBLIC_KEYS` array.
+
+### Initial setup
+
+Generate a keypair (one-time):
+
+```bash
+node -e "
+const crypto = require('crypto');
+const kp = crypto.generateKeyPairSync('ed25519');
+console.log(kp.privateKey.export({ type: 'pkcs8', format: 'pem' }));
+console.log('Public key (raw hex):',
+  kp.publicKey.export({ type: 'spki', format: 'der' }).slice(12).toString('hex'));
+"
+```
+
+1. Store the PEM private key as `QLUENT_SIGNING_PRIVATE_KEY` in GitHub Actions secrets.
+2. Replace the placeholder in `TRUSTED_PUBLIC_KEYS` in `lib/installer.js` with the hex public key.
+
+### Key rotation
+
+1. Generate a new keypair.
+2. **Prepend** the new public key to `TRUSTED_PUBLIC_KEYS` in `lib/installer.js`.
+3. Publish the npm package (now trusts both old and new keys).
+4. Update the `QLUENT_SIGNING_PRIVATE_KEY` secret to the new private key.
+5. After a grace period (2-3 releases), remove the old public key from the array.
+
+### Enabling mandatory signature verification
+
+Once all active releases include `.sha256.sig` files, set `SIGNATURE_REQUIRED = true`
+in `lib/installer.js`. Users can still bypass with `QLUENT_CLI_SKIP_SIGNATURE_VERIFICATION=1`
+as an escape hatch.
 
 ## Rollback
 

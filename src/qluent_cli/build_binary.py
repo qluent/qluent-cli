@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import os
 import platform
 import shutil
 import subprocess
@@ -52,6 +54,17 @@ def write_sha256_file(path: Path) -> Path:
     checksum_path = path.with_name(f"{path.name}.sha256")
     checksum_path.write_text(f"{sha256_file(path)}  {path.name}\n")
     return checksum_path
+
+
+def sign_checksum_file(checksum_path: Path, private_key_pem: str) -> Path:
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+    private_key = load_pem_private_key(private_key_pem.encode(), password=None)
+    checksum_content = checksum_path.read_bytes()
+    signature = private_key.sign(checksum_content)
+    sig_path = checksum_path.with_name(f"{checksum_path.name}.sig")
+    sig_path.write_text(base64.b64encode(signature).decode() + "\n")
+    return sig_path
 
 
 def build_pyinstaller_args(
@@ -126,7 +139,15 @@ def build_binary(
     final_path = output_dir / artifact_name(platform_name, arch_name)
     shutil.copy2(built_binary, final_path)
     final_path.chmod(0o755)
-    write_sha256_file(final_path)
+    checksum_path = write_sha256_file(final_path)
+
+    signing_key = os.environ.get("QLUENT_SIGNING_PRIVATE_KEY")
+    if signing_key:
+        sig_path = sign_checksum_file(checksum_path, signing_key)
+        print(f"Signed {sig_path}")
+    else:
+        print("QLUENT_SIGNING_PRIVATE_KEY not set, skipping signature")
+
     return final_path
 
 

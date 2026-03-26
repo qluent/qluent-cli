@@ -1,5 +1,0 @@
-click>=8.0
-httpx>=0.25
-
-[build]
-pyinstaller>=6.0

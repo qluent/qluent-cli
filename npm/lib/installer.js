@@ -92,9 +92,8 @@ const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 // Trusted Ed25519 public keys (raw 32-byte hex).
 // Multiple keys supported for rotation: verification succeeds if ANY key matches.
-// PLACEHOLDER: replace with the real public key after generating the signing keypair.
 const TRUSTED_PUBLIC_KEYS = [
-  "0000000000000000000000000000000000000000000000000000000000000000",
+  "a77fa57c27605d474e172ed4473996980cf7c96e78b06bdb07f8ad210d13e7b9",
 ];
 
 // Set to true once all active releases include .sha256.sig files.

@@ -1,4 +1,6 @@
 bin/qluent
 bin/qluent.exe
+bin/qluent.tmp
+bin/qluent.exe.tmp
 node_modules/
 package-lock.json

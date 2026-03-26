@@ -81,7 +81,10 @@ function getTransport(url) {
   return url.startsWith("https:") ? https : http;
 }
 
-function download(url, destination, { env = process.env, redirectsRemaining = 5 } = {}) {
+const MAX_BINARY_SIZE = 200 * 1024 * 1024; // 200 MB
+const MAX_CHECKSUM_SIZE = 1024; // 1 KB
+
+function download(url, destination, { env = process.env, redirectsRemaining = 5, maxSize = MAX_BINARY_SIZE } = {}) {
   const safeUrl = assertSecureUrl(url, { env }).toString();
   const transport = getTransport(safeUrl);
 
@@ -100,6 +103,7 @@ function download(url, destination, { env = process.env, redirectsRemaining = 5 
         download(response.headers.location, destination, {
           env,
           redirectsRemaining: redirectsRemaining - 1,
+          maxSize,
         }).then(resolve, reject);
         return;
       }
@@ -109,7 +113,19 @@ function download(url, destination, { env = process.env, redirectsRemaining = 5 
         return;
       }
 
-      const file = fs.createWriteStream(destination, { mode: 0o755 });
+      let received = 0;
+      const file = fs.createWriteStream(destination, { mode: 0o600 });
+
+      response.on("data", (chunk) => {
+        received += chunk.length;
+        if (received > maxSize) {
+          response.destroy();
+          file.destroy();
+          fs.rmSync(destination, { force: true });
+          reject(new Error(`Download exceeded maximum size of ${maxSize} bytes`));
+        }
+      });
+
       response.pipe(file);
       file.on("finish", () => {
         file.close(resolve);
@@ -121,7 +137,7 @@ function download(url, destination, { env = process.env, redirectsRemaining = 5 
   });
 }
 
-function downloadText(url, { env = process.env, redirectsRemaining = 5 } = {}) {
+function downloadText(url, { env = process.env, redirectsRemaining = 5, maxSize = MAX_CHECKSUM_SIZE } = {}) {
   const safeUrl = assertSecureUrl(url, { env }).toString();
   const transport = getTransport(safeUrl);
 
@@ -140,6 +156,7 @@ function downloadText(url, { env = process.env, redirectsRemaining = 5 } = {}) {
         downloadText(response.headers.location, {
           env,
           redirectsRemaining: redirectsRemaining - 1,
+          maxSize,
         }).then(resolve, reject);
         return;
       }
@@ -150,8 +167,15 @@ function downloadText(url, { env = process.env, redirectsRemaining = 5 } = {}) {
       }
 
       let body = "";
+      let received = 0;
       response.setEncoding("utf8");
       response.on("data", (chunk) => {
+        received += Buffer.byteLength(chunk, "utf8");
+        if (received > maxSize) {
+          response.destroy();
+          reject(new Error(`Download exceeded maximum size of ${maxSize} bytes`));
+          return;
+        }
         body += chunk;
       });
       response.on("end", () => resolve(body));
@@ -223,8 +247,17 @@ async function installBinary({
     return null;
   }
 
+  if (allowInsecureDownload(env)) {
+    logger.log(
+      "WARNING: QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD is set. " +
+        "Binary will be downloaded over insecure HTTP. " +
+        "This should ONLY be used for local development."
+    );
+  }
+
   const binaryName = platform === "win32" ? "qluent.exe" : "qluent";
   const destination = path.join(binDir, binaryName);
+  const tempDestination = `${destination}.tmp`;
   const binaryUrl = resolveDownloadUrl({
     env,
     version,
@@ -236,7 +269,7 @@ async function installBinary({
   fs.mkdirSync(binDir, { recursive: true });
 
   logger.log(`Downloading Qluent CLI from ${binaryUrl}`);
-  await download(binaryUrl, destination, { env });
+  await download(binaryUrl, tempDestination, { env });
 
   try {
     const checksumBody = await downloadText(checksumUrl, { env });
@@ -244,12 +277,13 @@ async function installBinary({
       checksumBody,
       path.basename(binaryUrl)
     );
-    verifyFileChecksum(destination, expectedChecksum);
+    verifyFileChecksum(tempDestination, expectedChecksum);
   } catch (error) {
-    fs.rmSync(destination, { force: true });
+    fs.rmSync(tempDestination, { force: true });
     throw error;
   }
 
+  fs.renameSync(tempDestination, destination);
   fs.chmodSync(destination, 0o755);
   logger.log(`Installed Qluent CLI to ${destination}`);
   return destination;
@@ -257,6 +291,8 @@ async function installBinary({
 
 module.exports = {
   DEFAULT_DIST_BASE_URL,
+  MAX_BINARY_SIZE,
+  MAX_CHECKSUM_SIZE,
   allowInsecureDownload,
   assertSecureUrl,
   download,

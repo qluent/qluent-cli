@@ -22,8 +22,6 @@ def test_setup_saves_config_and_writes_claude_md(monkeypatch, tmp_path):
             "qk_test\n"
             "project-123\n"
             "user@example.com\n"
-            "https://api.example.com\n"
-            "\n"
             "\n"
         ),
     )
@@ -32,7 +30,7 @@ def test_setup_saves_config_and_writes_claude_md(monkeypatch, tmp_path):
     saved = json.loads(config_file.read_text())
     assert saved == {
         "api_key": "qk_test",
-        "api_url": "https://api.example.com",
+        "api_url": config_module.DEFAULT_API_URL,
         "project_uuid": "project-123",
         "user_email": "user@example.com",
         "client_safe": True,
@@ -56,8 +54,6 @@ def test_setup_uses_development_default_api_url(monkeypatch, tmp_path):
             "qk_test\n"
             "project-123\n"
             "user@example.com\n"
-            "\n"
-            "\n"
             "n\n"
         ),
     )
@@ -81,8 +77,6 @@ def test_setup_local_flag_prefills_local_api_url(monkeypatch, tmp_path):
             "qk_test\n"
             "project-123\n"
             "user@example.com\n"
-            "\n"
-            "\n"
             "n\n"
         ),
     )

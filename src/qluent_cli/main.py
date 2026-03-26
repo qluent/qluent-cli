@@ -28,6 +28,8 @@ def _print_saved_config(data: dict[str, object]) -> None:
     from qluent_cli.config import mask_key
 
     for key, value in data.items():
+        if key == "client_safe":
+            continue
         click.echo(f"  {key}: {mask_key(value) if key in ('api_key', 'bearer_token') else value}")
 
 
@@ -166,19 +168,12 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
         default=str(existing.get("user_email") or ""),
         show_default=False,
     )
-    api_url = _prompt_required(
-        "API base URL",
-        default=str(existing.get("api_url") or (LOCAL_API_URL if local else DEFAULT_API_URL)),
-        show_default=True,
-    )
+    if local:
+        api_url = LOCAL_API_URL
+    else:
+        api_url = str(existing.get("api_url") or DEFAULT_API_URL)
 
-    stored_client_safe = existing.get("client_safe")
-    safe_default = (
-        bool(stored_client_safe)
-        if stored_client_safe is not None
-        else default_client_safe(api_url)
-    )
-    client_safe = click.confirm("Use client-safe mode", default=safe_default)
+    client_safe = default_client_safe(api_url)
 
     result = save_config(
         api_key=api_key,

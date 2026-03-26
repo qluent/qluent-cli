@@ -85,7 +85,9 @@ const MAX_BINARY_SIZE = 200 * 1024 * 1024; // 200 MB
 const MAX_CHECKSUM_SIZE = 1024; // 1 KB
 const MAX_SIGNATURE_SIZE = 256; // base64-encoded Ed25519 sig is 88 bytes
 
-// Fixed 12-byte SPKI DER prefix for Ed25519 public keys.
+// Ed25519 SPKI DER encoding: 12-byte fixed prefix (OID + tag + length) followed
+// by 32-byte raw key material. Lets us embed compact hex keys and reconstruct
+// the full DER at verification time. See RFC 8410.
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
 // Trusted Ed25519 public keys (raw 32-byte hex).
@@ -375,12 +377,10 @@ async function installBinary({
 
 module.exports = {
   DEFAULT_DIST_BASE_URL,
-  ED25519_SPKI_PREFIX,
   MAX_BINARY_SIZE,
   MAX_CHECKSUM_SIZE,
   MAX_SIGNATURE_SIZE,
   SIGNATURE_REQUIRED,
-  TRUSTED_PUBLIC_KEYS,
   allowInsecureDownload,
   assertSecureUrl,
   buildEd25519PublicKey,

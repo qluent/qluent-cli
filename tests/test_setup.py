@@ -34,6 +34,7 @@ def test_setup_saves_config_and_writes_claude_md(monkeypatch, tmp_path):
         "project_uuid": "project-123",
         "user_email": "user@example.com",
         "client_safe": True,
+        "bearer_token": "",
     }
     claude_md = tmp_path / "CLAUDE.md"
     assert claude_md.exists()

@@ -31,7 +31,7 @@ def _print_saved_config(data: dict[str, object]) -> None:
     for key, value in data.items():
         if key in hidden:
             continue
-        click.echo(f"  {key}: {mask_key(value) if key == 'api_key' else value}")
+        click.echo(f"  {key}: {mask_key(value) if key in ('api_key', 'bearer_token') else value}")
 
 
 def _prompt_required(
@@ -178,7 +178,7 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
         )
     else:
         api_url = str(existing.get("api_url") or DEFAULT_API_URL)
-        bearer_token = None
+        bearer_token = ""
 
     client_safe = default_client_safe(api_url)
 

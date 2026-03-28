@@ -34,7 +34,6 @@ def test_setup_saves_config_and_writes_claude_md(monkeypatch, tmp_path):
         "project_uuid": "project-123",
         "user_email": "user@example.com",
         "client_safe": True,
-        "bearer_token": "",
     }
     claude_md = tmp_path / "CLAUDE.md"
     assert claude_md.exists()
@@ -86,7 +85,7 @@ def test_setup_local_flag_prefills_local_api_url(monkeypatch, tmp_path):
     saved = json.loads(config_file.read_text())
     assert saved["api_url"] == config_module.LOCAL_API_URL
     assert saved["client_safe"] is False
-    assert saved["bearer_token"] == ""
+    assert "bearer_token" not in saved
 
 
 def test_claude_init_writes_file(monkeypatch, tmp_path):

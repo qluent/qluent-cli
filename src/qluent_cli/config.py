@@ -21,7 +21,6 @@ class QluentConfig:
     project_uuid: str
     user_email: str
     client_safe: bool = False
-    bearer_token: str = ""
 
 
 def _parse_bool(value: Any) -> bool:
@@ -80,7 +79,6 @@ def load_config() -> QluentConfig:
         project_uuid=project_uuid,
         user_email=user_email,
         client_safe=client_safe,
-        bearer_token=bearer_token,
     )
 
 
@@ -90,7 +88,6 @@ def save_config(
     project_uuid: str | None = None,
     user_email: str | None = None,
     client_safe: bool | None = None,
-    bearer_token: str | None = None,
 ) -> dict[str, Any]:
     """Save config values to ~/.qluent/config.json (merges with existing)."""
     existing: dict[str, Any] = {}
@@ -108,8 +105,6 @@ def save_config(
         existing["user_email"] = user_email
     if client_safe is not None:
         existing["client_safe"] = client_safe
-    if bearer_token is not None:
-        existing["bearer_token"] = bearer_token
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_DIR.chmod(0o700)

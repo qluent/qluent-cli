@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from qluent_cli import config as config_module
 
 
@@ -93,8 +95,6 @@ def test_load_config_rejects_bearer_token_without_api_key(monkeypatch, tmp_path)
     monkeypatch.delenv("QLUENT_CLIENT_SAFE", raising=False)
     monkeypatch.delenv("QLUENT_BEARER_TOKEN", raising=False)
 
-    import pytest
-
     with pytest.raises(SystemExit, match="Bearer-token auth is not supported"):
         config_module.load_config()
 
@@ -122,6 +122,5 @@ def test_load_config_fails_without_api_key(monkeypatch, tmp_path):
     monkeypatch.delenv("QLUENT_CLIENT_SAFE", raising=False)
     monkeypatch.delenv("QLUENT_BEARER_TOKEN", raising=False)
 
-    import pytest
     with pytest.raises(SystemExit, match="No API key configured"):
         config_module.load_config()

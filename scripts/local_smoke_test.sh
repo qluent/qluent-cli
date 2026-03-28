@@ -14,7 +14,7 @@ Optional environment variables:
   QLUENT_TEST_API_KEY       API key for a real API smoke test
   QLUENT_TEST_PROJECT_UUID  Project UUID for a real API smoke test
   QLUENT_TEST_USER_EMAIL    User email for a real API smoke test
-  QLUENT_TEST_URL           API base URL (default: https://app-development.qluent.com)
+  QLUENT_TEST_URL           API base URL (default: https://api.app.qluent.com)
   QLUENT_TEST_TREE_ID       Optional tree id for an extra trend smoke test
   QLUENT_SMOKE_NPM=1        Also test the local npm wrapper install in an isolated prefix
 
@@ -86,7 +86,7 @@ echo "==> Smoke: claude init"
 )
 
 if [[ -n "${QLUENT_TEST_API_KEY:-}" && -n "${QLUENT_TEST_PROJECT_UUID:-}" && -n "${QLUENT_TEST_USER_EMAIL:-}" ]]; then
-  TEST_URL="${QLUENT_TEST_URL:-https://app-development.qluent.com}"
+  TEST_URL="${QLUENT_TEST_URL:-https://api.app.qluent.com}"
 
   echo "==> Smoke: config + live API"
   HOME="$TMP_HOME" "$BINARY_PATH" config \

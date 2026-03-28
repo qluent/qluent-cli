@@ -16,9 +16,7 @@ class QluentClient:
         self._config = config
         self._base = f"{config.api_url}/api/v1/project/{config.project_uuid}"
         headers: dict[str, str] = {}
-        if config.bearer_token:
-            headers["Authorization"] = f"Bearer {config.bearer_token}"
-        elif config.api_key:
+        if config.api_key:
             headers["X-API-Key"] = config.api_key
         if config.client_safe:
             headers["X-Qluent-Client-Safe"] = "true"

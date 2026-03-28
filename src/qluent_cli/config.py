@@ -10,7 +10,7 @@ from typing import Any
 
 CONFIG_DIR = Path.home() / ".qluent"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-DEFAULT_API_URL = "https://api.app-development.qluent.com"
+DEFAULT_API_URL = "https://api.app.qluent.com"
 LOCAL_API_URL = "http://localhost:8001"
 
 
@@ -62,8 +62,13 @@ def load_config() -> QluentConfig:
     else:
         client_safe = default_client_safe(api_url)
 
-    if not api_key and not bearer_token:
-        raise SystemExit("No API key or bearer token configured. Run: qluent config --api-key qk_... or --bearer-token <jwt>")
+    if not api_key:
+        if bearer_token:
+            raise SystemExit(
+                "Bearer-token auth is not supported by the public metric-tree API. "
+                "Configure an API key instead: qluent config --api-key qk_..."
+            )
+        raise SystemExit("No API key configured. Run: qluent config --api-key qk_...")
     if not project_uuid:
         raise SystemExit("No project configured. Run: qluent config --project UUID")
     if not user_email:

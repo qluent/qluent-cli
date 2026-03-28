@@ -66,7 +66,10 @@ def _prompt_required(
     default=None,
     help="Redact tree formulas and SQL contract details for client-facing use.",
 )
-@click.option("--bearer-token", help="Bearer token for local backend auth (Firebase JWT).")
+@click.option(
+    "--bearer-token",
+    help="Deprecated legacy option. The metric-tree API uses X-API-Key auth.",
+)
 def config(
     api_key: str | None,
     url: str | None,
@@ -87,6 +90,10 @@ def config(
 
     if url and local:
         raise click.ClickException("Use either --url or --local, not both.")
+    if bearer_token:
+        raise click.ClickException(
+            "Bearer-token auth is not supported by the metric-tree API. Configure an API key instead."
+        )
 
     effective_url = LOCAL_API_URL if local else url
 
@@ -171,11 +178,7 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
     )
     if local:
         api_url = LOCAL_API_URL
-        bearer_token = _prompt_required(
-            "Bearer token (Firebase JWT)",
-            default=str(existing.get("bearer_token") or ""),
-            show_default=False,
-        )
+        bearer_token = ""
     else:
         api_url = str(existing.get("api_url") or DEFAULT_API_URL)
         bearer_token = ""

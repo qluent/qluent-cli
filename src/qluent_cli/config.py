@@ -10,7 +10,7 @@ from typing import Any
 
 CONFIG_DIR = Path.home() / ".qluent"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-DEFAULT_API_URL = "https://api.app-development.qluent.com"
+DEFAULT_API_URL = "https://api.app.qluent.com"
 LOCAL_API_URL = "http://localhost:8001"
 
 
@@ -21,7 +21,6 @@ class QluentConfig:
     project_uuid: str
     user_email: str
     client_safe: bool = False
-    bearer_token: str = ""
 
 
 def _parse_bool(value: Any) -> bool:
@@ -52,6 +51,14 @@ def load_config() -> QluentConfig:
 
     api_key = get("QLUENT_API_KEY", "api_key")
     api_url = get("QLUENT_API_URL", "api_url") or DEFAULT_API_URL
+    if api_url.lower().startswith("http://") and not (
+        api_url.lower().startswith("http://localhost")
+        or api_url.lower().startswith("http://127.0.0.1")
+    ):
+        raise SystemExit(
+            f"Refusing to connect over plain HTTP to {api_url} — "
+            "API keys would be sent in cleartext. Use https:// or --local for localhost."
+        )
     project_uuid = get("QLUENT_PROJECT_UUID", "project_uuid")
     user_email = get("QLUENT_USER_EMAIL", "user_email")
     bearer_token = get("QLUENT_BEARER_TOKEN", "bearer_token")
@@ -62,8 +69,13 @@ def load_config() -> QluentConfig:
     else:
         client_safe = default_client_safe(api_url)
 
-    if not api_key and not bearer_token:
-        raise SystemExit("No API key or bearer token configured. Run: qluent config --api-key qk_... or --bearer-token <jwt>")
+    if not api_key:
+        if bearer_token:
+            raise SystemExit(
+                "Bearer-token auth is not supported by the public metric-tree API. "
+                "Configure an API key instead: qluent config --api-key qk_..."
+            )
+        raise SystemExit("No API key configured. Run: qluent config --api-key qk_...")
     if not project_uuid:
         raise SystemExit("No project configured. Run: qluent config --project UUID")
     if not user_email:
@@ -75,7 +87,6 @@ def load_config() -> QluentConfig:
         project_uuid=project_uuid,
         user_email=user_email,
         client_safe=client_safe,
-        bearer_token=bearer_token,
     )
 
 
@@ -85,7 +96,6 @@ def save_config(
     project_uuid: str | None = None,
     user_email: str | None = None,
     client_safe: bool | None = None,
-    bearer_token: str | None = None,
 ) -> dict[str, Any]:
     """Save config values to ~/.qluent/config.json (merges with existing)."""
     existing: dict[str, Any] = {}
@@ -103,8 +113,7 @@ def save_config(
         existing["user_email"] = user_email
     if client_safe is not None:
         existing["client_safe"] = client_safe
-    if bearer_token is not None:
-        existing["bearer_token"] = bearer_token
+    existing.pop("bearer_token", None)
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_DIR.chmod(0o700)

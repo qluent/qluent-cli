@@ -30,32 +30,7 @@ def test_client_safe_mode_adds_redaction_header(monkeypatch):
     }
 
 
-def test_bearer_token_uses_authorization_header(monkeypatch):
-    captured: dict[str, object] = {}
-
-    class DummyHttpxClient:
-        def __init__(self, *, headers, timeout):
-            captured["headers"] = headers
-            captured["timeout"] = timeout
-
-    monkeypatch.setattr("qluent_cli.client.httpx.Client", DummyHttpxClient)
-
-    QluentClient(
-        QluentConfig(
-            api_key="qk_test",
-            api_url="http://localhost:8001",
-            project_uuid="project-123",
-            user_email="user@example.com",
-            bearer_token="jwt_token_here",
-        )
-    )
-
-    assert "Authorization" in captured["headers"]
-    assert captured["headers"]["Authorization"] == "Bearer jwt_token_here"
-    assert "X-API-Key" not in captured["headers"]
-
-
-def test_api_key_used_when_no_bearer_token(monkeypatch):
+def test_api_key_sets_header(monkeypatch):
     captured: dict[str, object] = {}
 
     class DummyHttpxClient:
@@ -113,4 +88,4 @@ def test_base_url_uses_projects_path(monkeypatch):
         )
     )
 
-    assert client._base == "https://api.example.com/api/projects/project-123"
+    assert client._base == "https://api.example.com/api/v1/project/project-123"

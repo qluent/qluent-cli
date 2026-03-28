@@ -30,7 +30,7 @@ That walks the user through:
 - API URL
 - generating `CLAUDE.md`
 
-The default test environment is `https://app-development.qluent.com`.
+The default hosted environment is `https://api.app.qluent.com`.
 For local backend development, run:
 
 ```bash
@@ -125,7 +125,7 @@ To include a real API smoke test:
 QLUENT_TEST_API_KEY=qk_... \
 QLUENT_TEST_PROJECT_UUID=<PROJECT_UUID> \
 QLUENT_TEST_USER_EMAIL=you@example.com \
-QLUENT_TEST_URL=https://app-development.qluent.com \
+QLUENT_TEST_URL=https://api.app.qluent.com \
 QLUENT_TEST_TREE_ID=revenue \
 scripts/local_smoke_test.sh
 ```

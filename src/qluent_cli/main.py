@@ -31,7 +31,7 @@ def _print_saved_config(data: dict[str, object]) -> None:
     for key, value in data.items():
         if key in hidden:
             continue
-        click.echo(f"  {key}: {mask_key(value) if key in ('api_key', 'bearer_token') else value}")
+        click.echo(f"  {key}: {mask_key(value) if key == 'api_key' else value}")
 
 
 def _prompt_required(
@@ -66,7 +66,11 @@ def _prompt_required(
     default=None,
     help="Redact tree formulas and SQL contract details for client-facing use.",
 )
-@click.option("--bearer-token", help="Bearer token for local backend auth (Firebase JWT).")
+@click.option(
+    "--bearer-token",
+    hidden=True,
+    help="Deprecated legacy option. The metric-tree API uses X-API-Key auth.",
+)
 def config(
     api_key: str | None,
     url: str | None,
@@ -87,10 +91,14 @@ def config(
 
     if url and local:
         raise click.ClickException("Use either --url or --local, not both.")
+    if bearer_token:
+        raise click.ClickException(
+            "Bearer-token auth is not supported by the metric-tree API. Configure an API key instead."
+        )
 
     effective_url = LOCAL_API_URL if local else url
 
-    if not any([api_key, effective_url, project, email, client_safe is not None, bearer_token]):
+    if not any([api_key, effective_url, project, email, client_safe is not None]):
         if CONFIG_FILE.exists():
             data = _load_saved_config()
             if "client_safe" not in data:
@@ -108,7 +116,6 @@ def config(
         project_uuid=project,
         user_email=email,
         client_safe=client_safe,
-        bearer_token=bearer_token,
     )
     if "client_safe" not in result:
         result["client_safe"] = default_client_safe(
@@ -169,17 +176,7 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
         default=str(existing.get("user_email") or ""),
         show_default=False,
     )
-    if local:
-        api_url = LOCAL_API_URL
-        bearer_token = _prompt_required(
-            "Bearer token (Firebase JWT)",
-            default=str(existing.get("bearer_token") or ""),
-            show_default=False,
-        )
-    else:
-        api_url = str(existing.get("api_url") or DEFAULT_API_URL)
-        bearer_token = ""
-
+    api_url = LOCAL_API_URL if local else str(existing.get("api_url") or DEFAULT_API_URL)
     client_safe = default_client_safe(api_url)
 
     result = save_config(
@@ -188,7 +185,6 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
         project_uuid=project_uuid,
         user_email=user_email,
         client_safe=client_safe,
-        bearer_token=bearer_token,
     )
     click.echo("Config saved to ~/.qluent/config.json")
     _print_saved_config(result)

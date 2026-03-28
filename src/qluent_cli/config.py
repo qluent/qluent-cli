@@ -51,6 +51,14 @@ def load_config() -> QluentConfig:
 
     api_key = get("QLUENT_API_KEY", "api_key")
     api_url = get("QLUENT_API_URL", "api_url") or DEFAULT_API_URL
+    if api_url.lower().startswith("http://") and not (
+        api_url.lower().startswith("http://localhost")
+        or api_url.lower().startswith("http://127.0.0.1")
+    ):
+        raise SystemExit(
+            f"Refusing to connect over plain HTTP to {api_url} — "
+            "API keys would be sent in cleartext. Use https:// or --local for localhost."
+        )
     project_uuid = get("QLUENT_PROJECT_UUID", "project_uuid")
     user_email = get("QLUENT_USER_EMAIL", "user_email")
     bearer_token = get("QLUENT_BEARER_TOKEN", "bearer_token")
@@ -105,6 +113,7 @@ def save_config(
         existing["user_email"] = user_email
     if client_safe is not None:
         existing["client_safe"] = client_safe
+    existing.pop("bearer_token", None)
 
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_DIR.chmod(0o700)

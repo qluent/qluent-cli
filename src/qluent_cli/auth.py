@@ -7,11 +7,14 @@ import socket
 import threading
 import webbrowser
 from dataclasses import dataclass
+from html import escape as html_escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import click
+
+from qluent_cli.config import is_local_url
 
 LOGIN_TIMEOUT_SECONDS = 300  # 5 minutes
 LOGIN_PATH = "/cli-auth"
@@ -44,6 +47,11 @@ _ERROR_HTML_TEMPLATE = (
 )
 
 
+def _error_html(message: str) -> str:
+    """Render error page with HTML-escaped message to prevent XSS."""
+    return _ERROR_HTML_TEMPLATE % html_escape(message)
+
+
 @dataclass
 class CallbackResult:
     """Result from the browser callback."""
@@ -56,14 +64,12 @@ class CallbackResult:
 
 
 def _single(values: list[str] | None) -> str:
-    """Extract a single value from a query-parameter list, or empty string."""
     if not values:
         return ""
     return values[0]
 
 
 def _find_free_port() -> int:
-    """Find a free port on 127.0.0.1 by binding to port 0."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
@@ -82,12 +88,11 @@ class _CallbackHandler(BaseHTTPRequestHandler):
 
         params = parse_qs(parsed.query)
 
-        # Validate CSRF state token
         state = _single(params.get("state"))
         if state != self.server.expected_state:
             self._respond_html(
                 400,
-                _ERROR_HTML_TEMPLATE % "Invalid state parameter. Please try again.",
+                _error_html("Invalid state parameter. Please try again."),
             )
             self.server.result = CallbackResult(
                 success=False, error="State mismatch (possible CSRF)"
@@ -95,16 +100,14 @@ class _CallbackHandler(BaseHTTPRequestHandler):
             self.server.got_callback.set()
             return
 
-        # Check for error response from the auth server
         error = _single(params.get("error"))
         if error:
             error_desc = _single(params.get("error_description")) or error
-            self._respond_html(400, _ERROR_HTML_TEMPLATE % error_desc)
+            self._respond_html(400, _error_html(error_desc))
             self.server.result = CallbackResult(success=False, error=error_desc)
             self.server.got_callback.set()
             return
 
-        # Extract credentials
         api_key = _single(params.get("api_key"))
         project_uuid = _single(params.get("project_uuid"))
         user_email = _single(params.get("user_email"))
@@ -120,7 +123,7 @@ class _CallbackHandler(BaseHTTPRequestHandler):
                 if not val
             ]
             msg = f"Missing parameters: {', '.join(missing)}"
-            self._respond_html(400, _ERROR_HTML_TEMPLATE % msg)
+            self._respond_html(400, _error_html(msg))
             self.server.result = CallbackResult(success=False, error=msg)
             self.server.got_callback.set()
             return
@@ -164,13 +167,10 @@ def _api_url_to_ui_url(api_url: str) -> str:
     """Derive the UI base URL from the API base URL.
 
     Production: https://api.app.qluent.com -> https://app.qluent.com
-    Local:      http://localhost:8001      -> http://localhost:3000
+    Local:      http://localhost:8001      -> http://localhost:5173
     """
-    normalized = api_url.rstrip("/").lower()
-    if normalized.startswith("http://localhost") or normalized.startswith(
-        "http://127.0.0.1"
-    ):
-        return "http://localhost:3000"
+    if is_local_url(api_url):
+        return "http://localhost:5173"
     return api_url.replace("api.app.", "app.").rstrip("/")
 
 
@@ -192,15 +192,8 @@ def browser_login(api_url: str) -> CallbackResult:
 
     try:
         click.echo("Opening browser to log in...")
-        opened = webbrowser.open(login_url)
-        if not opened:
-            click.echo(
-                "\nCould not open browser automatically. "
-                "Open this URL in your browser:\n"
-            )
-        else:
-            click.echo("If the browser did not open, copy this URL:\n")
-        click.echo(f"  {login_url}\n")
+        webbrowser.open(login_url)
+        click.echo(f"If the browser did not open, visit:\n\n  {login_url}\n")
         click.echo("Waiting for login...")
 
         got_it = server.got_callback.wait(timeout=LOGIN_TIMEOUT_SECONDS)

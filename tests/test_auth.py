@@ -131,11 +131,11 @@ def test_api_url_to_ui_url_production_trailing_slash():
 
 
 def test_api_url_to_ui_url_localhost():
-    assert _api_url_to_ui_url("http://localhost:8001") == "http://localhost:3000"
+    assert _api_url_to_ui_url("http://localhost:8001") == "http://localhost:5173"
 
 
 def test_api_url_to_ui_url_127():
-    assert _api_url_to_ui_url("http://127.0.0.1:8001") == "http://localhost:3000"
+    assert _api_url_to_ui_url("http://127.0.0.1:8001") == "http://localhost:5173"
 
 
 def test_browser_login_timeout(monkeypatch):

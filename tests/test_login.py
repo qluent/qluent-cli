@@ -17,11 +17,8 @@ def _mock_browser_login(result: CallbackResult):
     return fake_browser_login
 
 
-def test_login_saves_config_on_success(monkeypatch, tmp_path):
-    config_dir = tmp_path / ".qluent"
-    config_file = config_dir / "config.json"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
+def test_login_saves_config_on_success(monkeypatch, isolated_config):
+    _config_dir, config_file = isolated_config
 
     monkeypatch.setattr(
         "qluent_cli.auth.browser_login",
@@ -49,12 +46,7 @@ def test_login_saves_config_on_success(monkeypatch, tmp_path):
     assert saved["api_url"] == config_module.DEFAULT_API_URL
 
 
-def test_login_shows_error_on_failure(monkeypatch, tmp_path):
-    config_dir = tmp_path / ".qluent"
-    config_file = config_dir / "config.json"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
-
+def test_login_shows_error_on_failure(monkeypatch, isolated_config):
     monkeypatch.setattr(
         "qluent_cli.auth.browser_login",
         _mock_browser_login(
@@ -69,11 +61,8 @@ def test_login_shows_error_on_failure(monkeypatch, tmp_path):
     assert "Timed out" in result.output
 
 
-def test_login_local_flag_uses_local_url(monkeypatch, tmp_path):
-    config_dir = tmp_path / ".qluent"
-    config_file = config_dir / "config.json"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
+def test_login_local_flag_uses_local_url(monkeypatch, isolated_config):
+    _config_dir, config_file = isolated_config
 
     fake = _mock_browser_login(
         CallbackResult(

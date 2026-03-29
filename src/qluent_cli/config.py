@@ -31,12 +31,16 @@ def _parse_bool(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
-def default_client_safe(api_url: str) -> bool:
+def is_local_url(api_url: str) -> bool:
+    """Check whether a URL points to localhost or 127.0.0.1."""
     normalized = api_url.rstrip("/").lower()
-    return not (
-        normalized.startswith("http://localhost")
-        or normalized.startswith("http://127.0.0.1")
+    return normalized.startswith("http://localhost") or normalized.startswith(
+        "http://127.0.0.1"
     )
+
+
+def default_client_safe(api_url: str) -> bool:
+    return not is_local_url(api_url)
 
 
 def load_config() -> QluentConfig:
@@ -51,10 +55,7 @@ def load_config() -> QluentConfig:
 
     api_key = get("QLUENT_API_KEY", "api_key")
     api_url = get("QLUENT_API_URL", "api_url") or DEFAULT_API_URL
-    if api_url.lower().startswith("http://") and not (
-        api_url.lower().startswith("http://localhost")
-        or api_url.lower().startswith("http://127.0.0.1")
-    ):
+    if api_url.lower().startswith("http://") and not is_local_url(api_url):
         raise SystemExit(
             f"Refusing to connect over plain HTTP to {api_url} — "
             "API keys would be sent in cleartext. Use https:// or --local for localhost."
@@ -75,11 +76,11 @@ def load_config() -> QluentConfig:
                 "Bearer-token auth is not supported by the public metric-tree API. "
                 "Configure an API key instead: qluent config --api-key qk_..."
             )
-        raise SystemExit("No API key configured. Run: qluent config --api-key qk_...")
+        raise SystemExit("No API key configured. Run: qluent login  or  qluent config --api-key qk_...")
     if not project_uuid:
-        raise SystemExit("No project configured. Run: qluent config --project UUID")
+        raise SystemExit("No project configured. Run: qluent login  or  qluent config --project UUID")
     if not user_email:
-        raise SystemExit("No email configured. Run: qluent config --email you@co.com")
+        raise SystemExit("No email configured. Run: qluent login  or  qluent config --email you@co.com")
 
     return QluentConfig(
         api_key=api_key,
@@ -98,10 +99,7 @@ def save_config(
     client_safe: bool | None = None,
 ) -> dict[str, Any]:
     """Save config values to ~/.qluent/config.json (merges with existing)."""
-    existing: dict[str, Any] = {}
-    if CONFIG_FILE.exists():
-        with open(CONFIG_FILE) as f:
-            existing = json.load(f)
+    existing = load_raw_config()
 
     if api_key is not None:
         existing["api_key"] = api_key
@@ -124,6 +122,17 @@ def save_config(
     return existing
 
 
+def load_raw_config() -> dict[str, Any]:
+    """Load raw config dict from ~/.qluent/config.json, or empty dict if missing."""
+    if CONFIG_FILE.exists():
+        with open(CONFIG_FILE) as f:
+            return json.load(f)
+    return {}
+
+
 def mask_key(value: str) -> str:
     """Mask an API key for display: show first 10 chars + '...'."""
     return value[:10] + "..." if len(value) > 10 else value
+
+
+CONFIG_SAVED_MSG = f"Config saved to {CONFIG_FILE}"

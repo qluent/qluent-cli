@@ -8,11 +8,8 @@ from qluent_cli import config as config_module
 from qluent_cli.main import cli
 
 
-def test_setup_saves_config_and_writes_claude_md(monkeypatch, tmp_path):
-    config_dir = tmp_path / ".qluent"
-    config_file = config_dir / "config.json"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
+def test_setup_saves_config_and_writes_claude_md(monkeypatch, isolated_config, tmp_path):
+    _config_dir, config_file = isolated_config
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(
@@ -40,11 +37,8 @@ def test_setup_saves_config_and_writes_claude_md(monkeypatch, tmp_path):
     assert "# Qluent Metric Trees" in claude_md.read_text()
 
 
-def test_setup_uses_production_default_api_url(monkeypatch, tmp_path):
-    config_dir = tmp_path / ".qluent"
-    config_file = config_dir / "config.json"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
+def test_setup_uses_production_default_api_url(monkeypatch, isolated_config, tmp_path):
+    _config_dir, config_file = isolated_config
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(
@@ -63,11 +57,8 @@ def test_setup_uses_production_default_api_url(monkeypatch, tmp_path):
     assert saved["api_url"] == config_module.DEFAULT_API_URL
 
 
-def test_setup_local_flag_prefills_local_api_url(monkeypatch, tmp_path):
-    config_dir = tmp_path / ".qluent"
-    config_file = config_dir / "config.json"
-    monkeypatch.setattr(config_module, "CONFIG_DIR", config_dir)
-    monkeypatch.setattr(config_module, "CONFIG_FILE", config_file)
+def test_setup_local_flag_prefills_local_api_url(monkeypatch, isolated_config, tmp_path):
+    _config_dir, config_file = isolated_config
     monkeypatch.chdir(tmp_path)
 
     result = CliRunner().invoke(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import secrets
 import socket
 import threading
@@ -10,7 +11,7 @@ from dataclasses import dataclass
 from html import escape as html_escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode, urlparse
 
 import click
 
@@ -18,6 +19,7 @@ from qluent_cli.config import is_local_url
 
 LOGIN_TIMEOUT_SECONDS = 300  # 5 minutes
 LOGIN_PATH = "/cli-auth"
+_MAX_POST_BYTES = 16_384  # 16 KB — actual payload is ~200 bytes
 
 _PAGE_STYLE = (
     "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');"
@@ -73,6 +75,39 @@ _ERROR_HTML_PREFIX = (
 
 _ERROR_HTML_SUFFIX = "</p></div></body></html>"
 
+# Relay page: extracts credentials from the query string, scrubs the URL
+# from browser history, and POSTs them to /complete so the API key never
+# persists in the address bar or history entries.
+_RELAY_PAGE_STYLE = (
+    "*{margin:0;padding:0;box-sizing:border-box}"
+    "body{font-family:system-ui,-apple-system,sans-serif;"
+    "display:flex;justify-content:center;align-items:center;"
+    "min-height:100vh;color:#666;font-size:0.875rem}"
+)
+
+_RELAY_HTML = (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<meta name='referrer' content='no-referrer'>"
+    "<title>Qluent CLI</title>"
+    f"<style>{_RELAY_PAGE_STYLE}</style>"
+    "</head><body>"
+    "<p>Completing login\u2026</p>"
+    "<script>"
+    "(function(){"
+    "var p={};"
+    "new URLSearchParams(location.search).forEach(function(v,k){p[k]=v});"
+    "history.replaceState(null,'','/');"
+    "fetch('/complete',{method:'POST',"
+    "headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify(p)})"
+    ".then(function(r){return r.text()})"
+    ".then(function(h){document.open();document.write(h);document.close()})"
+    ".catch(function(){document.body.textContent='Something went wrong. Check the terminal.'});"
+    "})();"
+    "</script></body></html>"
+)
+
 
 def _error_html(message: str) -> str:
     """Render error page with HTML-escaped message to prevent XSS."""
@@ -88,12 +123,6 @@ class CallbackResult:
     project_uuid: str = ""
     user_email: str = ""
     error: str = ""
-
-
-def _single(values: list[str] | None) -> str:
-    if not values:
-        return ""
-    return values[0]
 
 
 def _find_free_port() -> int:
@@ -112,10 +141,27 @@ class _CallbackHandler(BaseHTTPRequestHandler):
         if parsed.path != "/callback":
             self._respond(404, "Not found")
             return
+        # Serve the relay page — it will scrub the URL and POST credentials
+        # to /complete so the API key never stays in browser history.
+        self._respond_html(200, _RELAY_HTML)
 
-        params = parse_qs(parsed.query)
+    def do_POST(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        if parsed.path != "/complete":
+            self._respond(404, "Not found")
+            return
 
-        state = _single(params.get("state"))
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > _MAX_POST_BYTES:
+            self._respond(413, "Payload too large")
+            return
+        try:
+            params = json.loads(self.rfile.read(content_length))
+        except (json.JSONDecodeError, ValueError):
+            self._respond_html(400, _error_html("Invalid request."))
+            return
+
+        state = params.get("state", "")
         if state != self.server.expected_state:
             self._respond_html(
                 400,
@@ -127,17 +173,17 @@ class _CallbackHandler(BaseHTTPRequestHandler):
             self.server.got_callback.set()
             return
 
-        error = _single(params.get("error"))
+        error = params.get("error", "")
         if error:
-            error_desc = _single(params.get("error_description")) or error
+            error_desc = params.get("error_description") or error
             self._respond_html(400, _error_html(error_desc))
             self.server.result = CallbackResult(success=False, error=error_desc)
             self.server.got_callback.set()
             return
 
-        api_key = _single(params.get("api_key"))
-        project_uuid = _single(params.get("project_uuid"))
-        user_email = _single(params.get("user_email"))
+        api_key = params.get("api_key", "")
+        project_uuid = params.get("project_uuid", "")
+        user_email = params.get("user_email", "")
 
         if not all([api_key, project_uuid, user_email]):
             missing = [

@@ -29,13 +29,30 @@ def _start_server(state: str) -> tuple[_CallbackServer, int]:
     return server, port
 
 
-def test_callback_success():
-    state = "test_state_123"
-    server, port = _start_server(state)
+def test_callback_get_serves_relay_page():
+    """GET /callback returns the relay page (no credentials processed yet)."""
+    server, port = _start_server("state")
     try:
         resp = httpx.get(
             f"http://127.0.0.1:{port}/callback",
-            params={
+            params={"api_key": "qk_test", "state": "state"},
+        )
+        assert resp.status_code == 200
+        assert "/complete" in resp.text
+        assert "history.replaceState" in resp.text
+        # Credentials are NOT processed on the GET — only the relay page is served
+        assert not server.got_callback.is_set()
+    finally:
+        server.shutdown()
+
+
+def test_complete_success():
+    state = "test_state_123"
+    server, port = _start_server(state)
+    try:
+        resp = httpx.post(
+            f"http://127.0.0.1:{port}/complete",
+            json={
                 "api_key": "qk_test_key",
                 "project_uuid": "proj-abc",
                 "user_email": "a@b.com",
@@ -55,12 +72,12 @@ def test_callback_success():
         server.shutdown()
 
 
-def test_callback_state_mismatch():
+def test_complete_state_mismatch():
     server, port = _start_server("correct_state")
     try:
-        resp = httpx.get(
-            f"http://127.0.0.1:{port}/callback",
-            params={
+        resp = httpx.post(
+            f"http://127.0.0.1:{port}/complete",
+            json={
                 "api_key": "qk_test",
                 "project_uuid": "proj-abc",
                 "user_email": "a@b.com",
@@ -75,13 +92,13 @@ def test_callback_state_mismatch():
         server.shutdown()
 
 
-def test_callback_missing_params():
+def test_complete_missing_params():
     state = "ok_state"
     server, port = _start_server(state)
     try:
-        resp = httpx.get(
-            f"http://127.0.0.1:{port}/callback",
-            params={"state": state, "api_key": "qk_test"},
+        resp = httpx.post(
+            f"http://127.0.0.1:{port}/complete",
+            json={"state": state, "api_key": "qk_test"},
         )
         assert resp.status_code == 400
         assert server.result is not None
@@ -92,13 +109,13 @@ def test_callback_missing_params():
         server.shutdown()
 
 
-def test_callback_error_from_auth_server():
+def test_complete_error_from_auth_server():
     state = "ok_state"
     server, port = _start_server(state)
     try:
-        resp = httpx.get(
-            f"http://127.0.0.1:{port}/callback",
-            params={
+        resp = httpx.post(
+            f"http://127.0.0.1:{port}/complete",
+            json={
                 "state": state,
                 "error": "access_denied",
                 "error_description": "User cancelled",
@@ -149,10 +166,9 @@ def test_browser_login_timeout(monkeypatch):
 
 
 def test_browser_login_success_flow(monkeypatch):
-    """Simulate a full login flow by having webbrowser.open trigger the callback."""
+    """Simulate a full login flow: browser GETs relay page, then POSTs to /complete."""
 
     def fake_open(url: str) -> bool:
-        # Parse the callback_url and state from the login URL
         from urllib.parse import parse_qs, urlparse
 
         parsed = urlparse(url)
@@ -160,10 +176,17 @@ def test_browser_login_success_flow(monkeypatch):
         callback_url = params["callback_url"][0]
         state = params["state"][0]
 
+        # Derive the server base from the callback URL
+        cb_parsed = urlparse(callback_url)
+        base = f"{cb_parsed.scheme}://{cb_parsed.netloc}"
+
         def do_callback():
-            httpx.get(
-                callback_url,
-                params={
+            # Step 1: browser hits the redirect URL (GET /callback) — relay page
+            httpx.get(callback_url, params={"state": state})
+            # Step 2: relay JS POSTs credentials to /complete
+            httpx.post(
+                f"{base}/complete",
+                json={
                     "api_key": "qk_browser_test",
                     "project_uuid": "proj-browser",
                     "user_email": "browser@test.com",

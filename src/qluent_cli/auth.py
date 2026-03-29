@@ -19,37 +19,64 @@ from qluent_cli.config import is_local_url
 LOGIN_TIMEOUT_SECONDS = 300  # 5 minutes
 LOGIN_PATH = "/cli-auth"
 
-_SUCCESS_HTML = """\
-<!DOCTYPE html>
-<html><head><title>Qluent CLI</title>
-<style>body{font-family:system-ui,sans-serif;display:flex;justify-content:center;\
-align-items:center;min-height:100vh;margin:0;background:#f8f9fa}\
-.card{text-align:center;padding:2rem;border-radius:8px;background:#fff;\
-box-shadow:0 2px 8px rgba(0,0,0,0.1);max-width:400px}\
-h1{color:#16a34a;margin-bottom:0.5rem}p{color:#374151}</style>
-</head><body><div class="card">
-<h1>Logged in</h1>
-<p>You can close this tab and return to the terminal.</p>
-</div></body></html>
-"""
+_PAGE_STYLE = (
+    "@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');"
+    "*{margin:0;padding:0;box-sizing:border-box}"
+    "body{font-family:'Inter',system-ui,-apple-system,sans-serif;"
+    "display:flex;justify-content:center;align-items:center;"
+    "min-height:100vh;background:#fefffe;color:#1a1a1a;"
+    "letter-spacing:-0.011em;-webkit-font-smoothing:antialiased}"
+    ".card{text-align:center;padding:3rem 2.5rem;border-radius:0.5rem;"
+    "border:1px solid rgba(0,0,0,0.08);max-width:400px;width:100%}"
+    ".icon{width:48px;height:48px;border-radius:50%;display:inline-flex;"
+    "align-items:center;justify-content:center;margin-bottom:1.25rem}"
+    ".icon-ok{background:rgba(98,0,238,0.08)}"
+    ".icon-err{background:rgba(220,38,38,0.08)}"
+    ".icon svg{width:24px;height:24px}"
+    "h1{font-size:1.25rem;font-weight:500;margin-bottom:0.5rem}"
+    "p{font-size:0.875rem;color:#666;line-height:1.5}"
+)
 
-_ERROR_HTML_TEMPLATE = (
-    '<!DOCTYPE html><html><head><title>Qluent CLI</title>'
-    "<style>body{font-family:system-ui,sans-serif;display:flex;justify-content:center;"
-    "align-items:center;min-height:100vh;margin:0;background:#f8f9fa}"
-    ".card{text-align:center;padding:2rem;border-radius:8px;background:#fff;"
-    "box-shadow:0 2px 8px rgba(0,0,0,0.1);max-width:400px}"
-    "h1{color:#dc2626;margin-bottom:0.5rem}p{color:#374151}</style>"
+_CHECK_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="rgb(98,0,238)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<polyline points="20 6 9 17 4 12"/></svg>'
+)
+
+_X_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+    'stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+)
+
+_SUCCESS_HTML = (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Qluent CLI</title>"
+    f"<style>{_PAGE_STYLE}</style>"
     '</head><body><div class="card">'
-    "<h1>Login failed</h1>"
-    "<p>%s</p>"
+    f'<div class="icon icon-ok">{_CHECK_SVG}</div>'
+    "<h1>Logged in</h1>"
+    "<p>You can close this tab and return to the terminal.</p>"
     "</div></body></html>"
 )
+
+_ERROR_HTML_PREFIX = (
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Qluent CLI</title>"
+    f"<style>{_PAGE_STYLE}</style>"
+    '</head><body><div class="card">'
+    f'<div class="icon icon-err">{_X_SVG}</div>'
+    "<h1>Login failed</h1><p>"
+)
+
+_ERROR_HTML_SUFFIX = "</p></div></body></html>"
 
 
 def _error_html(message: str) -> str:
     """Render error page with HTML-escaped message to prevent XSS."""
-    return _ERROR_HTML_TEMPLATE % html_escape(message)
+    return _ERROR_HTML_PREFIX + html_escape(message) + _ERROR_HTML_SUFFIX
 
 
 @dataclass

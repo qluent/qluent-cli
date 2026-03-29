@@ -611,6 +611,8 @@ def format_investigation(data: dict[str, Any]) -> str:
     evaluation = data.get("evaluation") or {}
     validation = data.get("validation") or {}
     root_cause = data.get("root_cause") or {}
+    match_result = data.get("match") or {}
+    agent = data.get("agent") or {}
     tree_label = (
         evaluation.get("tree_label")
         or validation.get("tree_label")
@@ -620,6 +622,21 @@ def format_investigation(data: dict[str, Any]) -> str:
     )
 
     lines = [f"{tree_label} Investigation", ""]
+    if data.get("question"):
+        lines.append(f'  Question: "{data["question"]}"')
+    if match_result:
+        if match_result.get("matched"):
+            lines.append(
+                "  Matched tree: "
+                + str(match_result.get("tree_id") or match_result.get("tree_label") or "?")
+            )
+        else:
+            decision = match_result.get("decision") or "no_match"
+            status_label = {
+                "ambiguous": "ambiguous match",
+                "no_trees": "no saved trees",
+            }.get(decision, "no tree match")
+            lines.append(f"  Match status: {status_label}")
     if data.get("period_label"):
         lines.append(f"  Period: {data['period_label']}")
     if data.get("segment_by_used"):
@@ -630,6 +647,32 @@ def format_investigation(data: dict[str, Any]) -> str:
             rendered_filters.append(f"{key}={','.join(values)}")
         if rendered_filters:
             lines.append("  Filters: " + "; ".join(rendered_filters))
+    if agent.get("status"):
+        lines.append(
+            "  Investigation status: "
+            + str(agent["status"]).replace("_", " ")
+        )
+
+    top_findings = agent.get("top_findings") or []
+    if top_findings:
+        lines.extend(["", "  Top findings:"])
+        for index, finding in enumerate(top_findings[:3], start=1):
+            lines.append(f"    {index}. {finding}")
+
+    gaps = agent.get("gaps") or []
+    if gaps:
+        lines.extend(["", "  Evidence gaps:"])
+        for gap in gaps[:6]:
+            lines.append(f"    - {gap}")
+
+    recommended_next_steps = agent.get("recommended_next_steps") or []
+    if recommended_next_steps:
+        lines.extend(["", "  Recommended next steps:"])
+        for step in recommended_next_steps[:4]:
+            title = step.get("title") or step.get("kind") or "Next step"
+            lines.append(f"    - {title}: {step.get('why', '')}".rstrip())
+            if step.get("command"):
+                lines.append(f"      {step['command']}")
 
     step_errors = data.get("step_errors") or {}
 

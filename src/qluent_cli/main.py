@@ -272,6 +272,7 @@ qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend
 qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
 qluent trees investigate revenue --period "last week"       # Validate + trend + evaluate + RCA bundle
+qluent trees investigate --question "Why did revenue drop last week?"  # Match tree + infer windows + bundle RCA
 qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
 ```
 
@@ -282,7 +283,40 @@ for reproducible bundled trend analysis.
 Supported periods: "last week", "this week", "last month", "this month", "last quarter",
 "yesterday", "last 30 days", "week over week", "month over month", or explicit ISO dates.
 
-## Root cause analysis workflow
+## Preferred Claude Code workflow
+
+When Claude Code is asked to investigate KPI movement, prefer the bundled investigation command
+with `--json-output` as the first step:
+
+```bash
+qluent trees investigate --question "Why did revenue drop last week?" --json-output
+```
+
+If the user already named the tree, use:
+
+```bash
+qluent trees investigate revenue --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD --json-output
+```
+
+Read the investigation bundle in this order:
+
+1. `agent.status`
+2. `agent.top_findings`
+3. `agent.gaps`
+4. `agent.recommended_next_steps`
+5. `root_cause`, `evaluation`, and `trend` details for evidence
+
+Use these rules:
+
+- Prefer `investigate --question` over manually chaining `match`, `trend`, `evaluate`, and `rca analyze`.
+- Prefer `--json-output` when Claude Code is driving the workflow.
+- If `agent.status = needs_tree_selection`, inspect `match.top_candidates` and either pick the strongest tree or ask the user.
+- If `agent.status = needs_more_data` or `partially_resolved`, run the first relevant command from `agent.recommended_next_steps` before inventing your own drill-down.
+- If `agent.status = resolved`, summarize the evidence and stop unless the user explicitly wants a deeper drill-down.
+- Always report the exact current and comparison windows you used.
+- Treat `agent.top_findings` as the fastest summary, then verify against `root_cause.conclusion.takeaways` and supporting evidence.
+
+## Manual root cause analysis workflow
 
 When asked to analyze business performance, follow this 3-step drill-down:
 

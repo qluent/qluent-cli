@@ -13,133 +13,24 @@ qluent trees validate <tree_id>                             # Validate tree SQL 
 qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
 qluent trees evaluate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD
 qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
-qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
 qluent trees investigate revenue --period "last week"       # Validate + trend + evaluate + RCA bundle
 qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
 ```
 
-All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`
-to set the reference date. The `investigate` command supports `--trend-as-of YYYY-MM-DD`
-for reproducible bundled trend analysis.
+All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`.
+The `investigate` command supports `--trend-as-of YYYY-MM-DD` for reproducible bundled analysis.
 
 Supported periods: "last week", "this week", "last month", "this month", "last quarter",
 "yesterday", "last 30 days", "week over week", "month over month", or explicit ISO dates.
 
-## Preferred Claude Code workflow
+## Workflows
 
-When Claude Code is asked to investigate KPI movement, prefer the bundled investigation command
-with `--json-output` as the first step:
+Use the built-in skills for analysis workflows:
 
-```bash
-qluent trees investigate --question "Why did revenue drop last week?" --json-output
-```
+- `/investigate` — Primary entry point. Bundles validation, trend, evaluation, and RCA in one call. Auto-invoked for KPI questions.
+- `/trend` — Multi-period trend analysis for a specific tree.
+- `/compare-trees` — Side-by-side comparison to validate mechanisms (volume vs mix shift).
+- `/rca` — Standalone root cause analysis with validation and confidence interpretation.
 
-If the user already named the tree, use:
-
-```bash
-qluent trees investigate revenue --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD --json-output
-```
-
-Read the investigation bundle in this order:
-
-1. `agent.status`
-2. `agent.top_findings`
-3. `agent.gaps`
-4. `agent.recommended_next_steps`
-5. `root_cause`, `evaluation`, and `trend` details for evidence
-
-Use these rules:
-
-- Prefer `investigate --question` over manually chaining `match`, `trend`, `evaluate`, and `rca analyze`.
-- Prefer `--json-output` when Claude Code is driving the workflow.
-- If `agent.status = needs_tree_selection`, inspect `match.top_candidates` and either pick the strongest tree or ask the user.
-- If `agent.status = needs_more_data` or `partially_resolved`, run the first relevant command from `agent.recommended_next_steps` before inventing your own drill-down.
-- If `agent.status = resolved`, summarize the evidence and stop unless the user explicitly wants a deeper drill-down.
-- Always report the exact current and comparison windows you used.
-- Treat `agent.top_findings` as the fastest summary, then verify against `root_cause.conclusion.takeaways` and supporting evidence.
-
-## Manual root cause analysis workflow
-
-When asked to analyze business performance, follow this 3-step drill-down:
-
-### Step 1: Spot the anomaly with `trend`
-```bash
-qluent trees trend revenue --periods 4 --grain week
-```
-Look for: which period had an unusual change? Is the trend accelerating, declining, or volatile?
-
-### Step 2: Drill into the anomaly with `evaluate`
-```bash
-qluent trees evaluate revenue --period "last week"
-```
-The Shapley attribution tells you WHICH sub-metric drove the change and by how much.
-Focus on the top contributors — they explain where the delta came from.
-
-### Step 3: Validate segment contracts with `trees validate`
-```bash
-qluent trees validate revenue
-```
-Use this before relying on segment RCA. A tree should explicitly project its execution columns
-and declared dimensions at every leaf node.
-
-### Step 4: Run deterministic root cause analysis with `rca analyze`
-```bash
-qluent rca analyze revenue --period "last week"
-```
-This traverses the tree and, when dimensions are available, cuts suspect nodes by segment
-to surface where the movement is concentrated.
-
-### Step 5: Cross-reference with `compare`
-```bash
-qluent trees compare revenue order_volume --period "last week"
-```
-Comparing related trees validates the mechanism. For example:
-- Revenue up +20% but Orders up +20% → pure volume growth
-- Revenue up +20% but Orders up +5% → basket size / mix shift
-- Revenue up but ROAS down → growth is coming at higher cost
-
-## How to interpret results
-
-### Shapley-value attribution (Top contributors)
-Each child's contribution to the parent's delta is computed using Shapley values from
-cooperative game theory. This answers: "how much of the parent's change is attributable
-to each child?"
-
-Key properties:
-- **Contributions sum to the parent delta** — they fully explain the change.
-- **A share > 100%** means this child drove MORE change than the total, offset by others.
-- **A negative share** means this child moved against the overall trend.
-- This is NOT a simple percentage breakdown — it accounts for formula interactions
-  (e.g., in ROAS = revenue / spend, both numerator and denominator are attributed correctly).
-
-### Trend labels
-- **accelerating**: positive and growing faster
-- **decelerating**: positive but slowing down
-- **recovering**: was negative, now positive
-- **declining**: was positive, now negative
-- **volatile**: direction changes frequently
-- **stable**: changes within ±2%
-
-### RCA confidence
-`conclusion.confidence` and `conclusion.confidence_score` are NOT probabilities.
-They are evidence-coverage heuristics.
-
-Interpret them like this:
-- `confidence_type = evidence_coverage_heuristic` means the score reflects how much deterministic evidence is available.
-- Higher scores mean broader coverage across driver, time-slice, segment/mix-shift, and mechanism evidence.
-- Warnings and unresolved branches reduce the score.
-- Use `evidence_types_present`, `evidence_types_missing`, and `confidence_factors` to explain why the score is high, medium, or low.
-- Never describe `80%` as "80% likely to be true." Describe it as an evidence or coverage score.
-
-### Example analysis
-"Why did revenue change last week?"
-
-1. `trend` shows: Revenue was +11%, +11%, then +6% → **decelerating**
-2. `evaluate` shows: Owned channels drove 143% of growth, but Organic declined 56%
-3. `compare` Revenue vs Orders: Owned revenue +20% but Owned orders -5% → higher basket size,
-   not more customers. Organic orders -5% matching Organic revenue -12% → volume loss.
-
-Conclusion: "Revenue growth is decelerating. Last week's gain came from higher basket sizes
-in owned channels (Direct, Email), not from customer acquisition. Organic traffic continues
-to decline — investigate SEO or content changes."
+Always prefer `/investigate` over manually chaining individual commands.

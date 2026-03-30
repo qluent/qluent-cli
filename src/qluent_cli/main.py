@@ -167,7 +167,6 @@ def login(local: bool) -> None:
     click.echo("Logged in successfully!")
     click.echo(f"  Project: {result.project_uuid}")
     click.echo(f"  Email:   {result.user_email}")
-    click.echo(f"  API key: {mask_key(result.api_key)}")
     click.echo(CONFIG_SAVED_MSG)
 
 

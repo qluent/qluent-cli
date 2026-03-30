@@ -239,12 +239,13 @@ class _CallbackServer(HTTPServer):
 def _api_url_to_ui_url(api_url: str) -> str:
     """Derive the UI base URL from the API base URL.
 
-    Production: https://api.app.qluent.com -> https://app.qluent.com
-    Local:      http://localhost:8001      -> http://localhost:5173
+    Development: https://api.app-development.qluent.com -> https://app-development.qluent.com
+    Local:       http://localhost:8001                   -> http://localhost:5173
     """
     if is_local_url(api_url):
         return "http://localhost:5173"
-    return api_url.replace("api.app.", "app.").rstrip("/")
+    # Strip "api." prefix from hostname
+    return api_url.replace("://api.", "://").rstrip("/")
 
 
 def browser_login(api_url: str) -> CallbackResult:

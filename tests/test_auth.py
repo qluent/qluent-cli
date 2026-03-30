@@ -139,12 +139,12 @@ def test_callback_wrong_path():
         server.shutdown()
 
 
-def test_api_url_to_ui_url_production():
-    assert _api_url_to_ui_url("https://api.app.qluent.com") == "https://app.qluent.com"
+def test_api_url_to_ui_url_development():
+    assert _api_url_to_ui_url("https://api.app-development.qluent.com") == "https://app-development.qluent.com"
 
 
-def test_api_url_to_ui_url_production_trailing_slash():
-    assert _api_url_to_ui_url("https://api.app.qluent.com/") == "https://app.qluent.com"
+def test_api_url_to_ui_url_development_trailing_slash():
+    assert _api_url_to_ui_url("https://api.app-development.qluent.com/") == "https://app-development.qluent.com"
 
 
 def test_api_url_to_ui_url_localhost():

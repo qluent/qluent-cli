@@ -15,7 +15,7 @@ npm install -g @qluent/cli
 qluent setup
 ```
 
-This defaults to the hosted Qluent API at `https://api.app.qluent.com`.
+This defaults to the hosted Qluent API at `https://api.app-development.qluent.com`.
 For local backend development, use:
 
 ```bash

@@ -11,16 +11,22 @@ npm install -g @qluent/cli
 
 ## First run
 
+Navigate to your project directory and log in:
+
 ```bash
-qluent setup
+qluent login
 ```
 
-This defaults to the hosted Qluent API at `https://api.app-development.qluent.com`.
+This opens your browser for SSO authentication, saves your credentials, and writes a
+`CLAUDE.md` file with Claude Code instructions in the current directory.
+
 For local backend development, use:
 
 ```bash
-qluent setup --local
+qluent login --local
 ```
+
+Alternatively, `qluent setup` provides an interactive flow where you paste your API key manually.
 
 ## Distribution host
 

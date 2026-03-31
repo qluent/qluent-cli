@@ -169,6 +169,16 @@ def login(local: bool) -> None:
     click.echo(f"  Email:   {result.user_email}")
     click.echo(CONFIG_SAVED_MSG)
 
+    target = Path("CLAUDE.md")
+    if target.exists():
+        overwrite = click.confirm(
+            f"\n{target} already exists. Overwrite it?",
+            default=False,
+        )
+        if not overwrite:
+            return
+    click.echo(_write_claude_file(target, force=target.exists()))
+
 
 @cli.command()
 @click.option(

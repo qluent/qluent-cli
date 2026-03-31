@@ -130,6 +130,15 @@ def _write_claude_file(path: Path, *, force: bool) -> str:
     return f"Wrote {path}"
 
 
+def _confirm_and_write_claude_file(target: Path, *, force: bool) -> None:
+    """Prompt to overwrite if needed, then write CLAUDE.md."""
+    if target.exists() and not force:
+        if not click.confirm(f"{target} already exists. Overwrite it?", default=False):
+            click.echo("Skipped CLAUDE.md generation")
+            return
+    click.echo(_write_claude_file(target, force=force or target.exists()))
+
+
 @cli.command()
 @click.option(
     "--local",
@@ -144,7 +153,6 @@ def login(local: bool) -> None:
         DEFAULT_API_URL,
         LOCAL_API_URL,
         default_client_safe,
-        mask_key,
         save_config,
     )
 
@@ -169,15 +177,7 @@ def login(local: bool) -> None:
     click.echo(f"  Email:   {result.user_email}")
     click.echo(CONFIG_SAVED_MSG)
 
-    target = Path("CLAUDE.md")
-    if target.exists():
-        overwrite = click.confirm(
-            f"\n{target} already exists. Overwrite it?",
-            default=False,
-        )
-        if not overwrite:
-            return
-    click.echo(_write_claude_file(target, force=target.exists()))
+    _confirm_and_write_claude_file(Path("CLAUDE.md"), force=False)
 
 
 @cli.command()
@@ -245,17 +245,7 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
         click.echo("Skipped CLAUDE.md generation")
         return
 
-    should_force = force
-    if target.exists() and not force:
-        should_force = click.confirm(
-            f"{target} already exists. Overwrite it?",
-            default=False,
-        )
-        if not should_force:
-            click.echo("Skipped CLAUDE.md generation")
-            return
-
-    click.echo(_write_claude_file(target, force=should_force))
+    _confirm_and_write_claude_file(target, force=force)
 
 
 cli.add_command(trees)

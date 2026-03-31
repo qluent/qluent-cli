@@ -26,11 +26,13 @@ Supported periods: "last week", "this week", "last month", "this month", "last q
 
 ## Workflows
 
+**IMPORTANT: Always start with `investigate`.** Do NOT manually chain `trend`, `evaluate`,
+`list`, or `rca analyze` as your first step. The `investigate` command bundles all of these
+into a single call. Running individual commands is slower and misses agent-level analysis.
+
 Use the built-in skills for analysis workflows:
 
 - `/investigate` — Primary entry point. Bundles validation, trend, evaluation, and RCA in one call. Auto-invoked for KPI questions.
-- `/trend` — Multi-period trend analysis for a specific tree.
-- `/compare-trees` — Side-by-side comparison to validate mechanisms (volume vs mix shift).
-- `/rca` — Standalone root cause analysis with validation and confidence interpretation.
-
-Always prefer `/investigate` over manually chaining individual commands.
+- `/trend` — Multi-period trend analysis for a specific tree. Only use as a follow-up.
+- `/compare-trees` — Side-by-side comparison to validate mechanisms (volume vs mix shift). Only use as a follow-up.
+- `/rca` — Standalone root cause analysis with validation and confidence interpretation. Only use as a follow-up.

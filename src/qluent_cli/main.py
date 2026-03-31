@@ -284,18 +284,32 @@ Supported periods: "last week", "this week", "last month", "this month", "last q
 
 ## Preferred Claude Code workflow
 
-When Claude Code is asked to investigate KPI movement, prefer the bundled investigation command
-with `--json-output` as the first step:
+**IMPORTANT: Always start with `investigate`.** Do NOT manually chain `trend`, `evaluate`,
+`list`, or `rca analyze` commands. The `investigate` command bundles all of these into a
+single call and returns a structured response. Running individual commands is slower,
+more error-prone, and misses the agent-level analysis.
+
+Your first command for ANY question about metrics, KPIs, revenue, sales, costs, or
+business performance should be:
 
 ```bash
-qluent trees investigate --question "Why did revenue drop last week?" --json-output
+qluent trees investigate --question "<user's question>" --json-output
 ```
 
 If the user already named the tree, use:
 
 ```bash
-qluent trees investigate revenue --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD --json-output
+qluent trees investigate <tree_id> --period "<period>" --json-output
 ```
+
+For explicit date ranges:
+
+```bash
+qluent trees investigate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD --json-output
+```
+
+Only use individual commands (`trend`, `evaluate`, `rca analyze`) as follow-up steps
+when `investigate` returns `agent.recommended_next_steps` that call for them.
 
 Read the investigation bundle in this order:
 
@@ -307,7 +321,6 @@ Read the investigation bundle in this order:
 
 Use these rules:
 
-- Prefer `investigate --question` over manually chaining `match`, `trend`, `evaluate`, and `rca analyze`.
 - Prefer `--json-output` when Claude Code is driving the workflow.
 - If `agent.status = needs_tree_selection`, inspect `match.top_candidates` and either pick the strongest tree or ask the user.
 - If `agent.status = needs_more_data` or `partially_resolved`, run the first relevant command from `agent.recommended_next_steps` before inventing your own drill-down.
@@ -317,7 +330,8 @@ Use these rules:
 
 ## Manual root cause analysis workflow
 
-When asked to analyze business performance, follow this 3-step drill-down:
+Only use this workflow when `investigate` is insufficient or when following up on
+`agent.recommended_next_steps`. Do NOT start here.
 
 ### Step 1: Spot the anomaly with `trend`
 ```bash

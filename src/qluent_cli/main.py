@@ -422,3 +422,6 @@ def claude_init(target_path: str, force: bool) -> None:
 
 
 cli.add_command(claude)
+
+if __name__ == "__main__":
+    cli()

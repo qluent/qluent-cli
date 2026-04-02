@@ -1,0 +1,8 @@
+{
+  "name": "qluent",
+  "description": "Deterministic KPI analysis with metric trees — Shapley attribution, trend analysis, and root cause investigation",
+  "version": "0.1.4",
+  "author": {
+    "name": "Qluent"
+  }
+}

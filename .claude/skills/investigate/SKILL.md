@@ -43,10 +43,27 @@ Read the investigation bundle in this order:
 - **`needs_tree_selection`**: Inspect `match.top_candidates`, pick the strongest tree (or ask the user), and re-run with the explicit tree_id.
 - **`needs_more_data`** or **`partially_resolved`**: Run the first relevant command from `agent.recommended_next_steps`. Do NOT invent your own drill-down until you've exhausted the recommended steps.
 
-## Step 4: Summarize
+## Step 4: Parallel deep-dive (when warranted)
+
+For complex investigations where `agent.status` is `resolved` but the user wants deeper analysis, or when `partially_resolved`, launch specialized agents in parallel:
+
+- **`trend-interpreter`** agent (sonnet): Run trend analysis on the primary tree to identify patterns and anomalies across multiple periods
+- **`rca-validator`** agent (opus): Validate the top RCA findings by cross-referencing against trend data and checking for data artifacts
+- **`segment-explorer`** agent (sonnet): Drill into the top Shapley contributors to find which segments concentrate the movement
+
+Launch these in parallel using the Agent tool. Each agent has access to `qluent` CLI commands and will return structured findings.
+
+Only use this step when:
+- The user explicitly asks for a deeper analysis
+- The investigation covers a broad time range (quarter+)
+- RCA confidence is low and validation would help
+- Multiple competing drivers need independent verification
+
+## Step 5: Summarize
 
 - Lead with the top findings
 - Verify against `root_cause.conclusion.takeaways` and supporting evidence
+- If agents were used, synthesize their outputs into a cohesive narrative
 - Always report the exact current and comparison windows used
 
 ## Rules

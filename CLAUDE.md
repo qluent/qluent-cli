@@ -1,38 +1,46 @@
-# Qluent Metric Trees
+# Qluent CLI — Development Guide
 
-You have access to the `qluent` CLI for deterministic KPI analysis. Use it to answer
-questions about business performance, revenue drivers, cost breakdowns, and trend changes.
+This is the source repo for the `qluent` CLI tool. For the Claude Code plugin
+(commands, agents, hooks), see [qluent-plugin-cc](https://github.com/qluent/qluent-plugin-cc).
 
-## Commands
+## Project structure
 
-```bash
-qluent trees list                                           # List available metric trees
-qluent trees match "Why did revenue drop last week?"        # Match a question to the best tree + infer windows
-qluent trees get <tree_id>                                  # Show tree hierarchy
-qluent trees validate <tree_id>                             # Validate tree SQL contracts and dimensions
-qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
-qluent trees evaluate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD
-qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
-qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
-qluent trees investigate revenue --period "last week"       # Validate + trend + evaluate + RCA bundle
-qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
+```
+src/qluent_cli/
+├── main.py          # CLI entry point (Click groups: trees, rca, config, setup, login)
+├── trees.py         # `qluent trees` command group (list, match, get, validate, evaluate, trend, compare, investigate)
+├── rca.py           # `qluent rca` command group (analyze)
+├── client.py        # HTTP client (httpx) for the Qluent API
+├── config.py        # Config file management (~/.qluent/config.json)
+├── auth.py          # Browser-based SSO login flow
+├── matching.py      # Tree matching / question-to-tree NLP
+├── formatters.py    # Human-readable output formatting
+├── dates.py         # Natural-language date parsing
+└── build_binary.py  # PyInstaller binary compilation
+
+npm/                 # NPM package (@qluent/cli) — Node.js shim that spawns the Python binary
+tests/               # pytest test suite
+scripts/             # Smoke tests and release helpers
 ```
 
-All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`.
-The `investigate` command supports `--trend-as-of YYYY-MM-DD` for reproducible bundled analysis.
+## Running tests
 
-Supported periods: "last week", "this week", "last month", "this month", "last quarter",
-"yesterday", "last 30 days", "week over week", "month over month", or explicit ISO dates.
+```bash
+uv run pytest
+uv run pytest tests/test_trees.py -k "test_evaluate"   # single test
+```
 
-## Workflows
+## Building binaries
 
-**IMPORTANT: Always start with `investigate`.** Do NOT manually chain `trend`, `evaluate`,
-`list`, or `rca analyze` as your first step. The `investigate` command bundles all of these
-into a single call. Running individual commands is slower and misses agent-level analysis.
+```bash
+uv run python -m qluent_cli.build_binary
+# Output: dist/binaries/qluent-<platform>-<arch>
+```
 
-Use the built-in skills for analysis workflows:
+## CLI architecture
 
-- `/investigate` — Primary entry point. Bundles validation, trend, evaluation, and RCA in one call. Auto-invoked for KPI questions.
-- `/trend` — Multi-period trend analysis for a specific tree. Only use as a follow-up.
-- `/compare-trees` — Side-by-side comparison to validate mechanisms (volume vs mix shift). Only use as a follow-up.
-- `/rca` — Standalone root cause analysis with validation and confidence interpretation. Only use as a follow-up.
+- **Click** groups: `cli` → `trees`, `rca`, `config`, `setup`, `login`, `claude`, `instructions`
+- **httpx** client with API key auth (`X-API-Key` header)
+- Config stored at `~/.qluent/config.json` (api_key, api_url, project_uuid, user_email, client_safe)
+- `--json-output` flag on all tree/rca commands for structured output
+- `--client-safe` mode redacts formulas and SQL contract details

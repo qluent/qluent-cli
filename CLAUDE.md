@@ -7,16 +7,18 @@ This is the source repo for the `qluent` CLI tool. For the Claude Code plugin
 
 ```
 src/qluent_cli/
-├── main.py          # CLI entry point (Click groups: trees, rca, config, setup, login)
-├── trees.py         # `qluent trees` command group (list, match, get, validate, evaluate, trend, compare, investigate)
-├── rca.py           # `qluent rca` command group (analyze)
-├── client.py        # HTTP client (httpx) for the Qluent API
-├── config.py        # Config file management (~/.qluent/config.json)
-├── auth.py          # Browser-based SSO login flow
-├── matching.py      # Tree matching / question-to-tree NLP
-├── formatters.py    # Human-readable output formatting
-├── dates.py         # Natural-language date parsing
-└── build_binary.py  # PyInstaller binary compilation
+├── main.py                # CLI entry point (Click groups: trees, rca, config, setup, login)
+├── trees.py               # `qluent trees` command group (list, match, get, validate, evaluate, trend, compare, investigate)
+├── rca.py                 # `qluent rca` command group (analyze)
+├── utils.py               # Shared helpers (parse_filters, format_step_error, resolve_date_args)
+├── client.py              # HTTP client (httpx) for the Qluent API
+├── config.py              # Config file management (~/.qluent/config.json)
+├── auth.py                # Browser-based SSO login flow
+├── matching.py            # Tree matching / question-to-tree NLP
+├── formatters.py          # Human-readable output formatting
+├── dates.py               # Natural-language date parsing
+├── claude_instructions.md # Embedded CLAUDE.md template for `qluent claude init`
+└── build_binary.py        # PyInstaller binary compilation
 
 npm/                 # NPM package (@qluent/cli) — Node.js shim that spawns the Python binary
 tests/               # pytest test suite

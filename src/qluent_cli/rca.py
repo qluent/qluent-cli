@@ -9,27 +9,7 @@ import click
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
 from qluent_cli.formatters import format_root_cause
-from qluent_cli.trees import _resolve_date_args
-
-
-def _parse_filters(filter_args: tuple[str, ...]) -> dict[str, list[str]]:
-    filters: dict[str, list[str]] = {}
-    for raw_filter in filter_args:
-        if "=" not in raw_filter:
-            raise click.BadParameter(
-                f"Invalid filter '{raw_filter}'. Use dimension=value.",
-                param_hint="filter",
-            )
-        key, value = raw_filter.split("=", 1)
-        cleaned_key = key.strip()
-        cleaned_value = value.strip()
-        if not cleaned_key or not cleaned_value:
-            raise click.BadParameter(
-                f"Invalid filter '{raw_filter}'. Use dimension=value.",
-                param_hint="filter",
-            )
-        filters.setdefault(cleaned_key, []).append(cleaned_value)
-    return filters
+from qluent_cli.utils import parse_filters, resolve_date_args
 
 
 @click.group()
@@ -68,8 +48,8 @@ def analyze(
     as_json: bool,
 ) -> None:
     """Run deterministic root-cause analysis for a metric tree."""
-    c_from, c_to, p_from, p_to = _resolve_date_args(period, current_range, compare_range)
-    parsed_filters = _parse_filters(filters)
+    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    parsed_filters = parse_filters(filters)
 
     client = QluentClient(load_config())
     data = client.root_cause_tree(

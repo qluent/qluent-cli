@@ -8,7 +8,6 @@ from datetime import date as dt_date
 from typing import Any
 
 import click
-import httpx
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
@@ -24,83 +23,12 @@ from qluent_cli.formatters import (
     format_tree_validation,
 )
 from qluent_cli.matching import match_tree_question
+from qluent_cli.utils import format_step_error, parse_filters, resolve_date_args
 
 
 @click.group()
 def trees() -> None:
     """Metric tree commands."""
-
-
-def _parse_filters(filter_args: tuple[str, ...]) -> dict[str, list[str]]:
-    filters: dict[str, list[str]] = {}
-    for raw_filter in filter_args:
-        if "=" not in raw_filter:
-            raise click.BadParameter(
-                f"Invalid filter '{raw_filter}'. Use dimension=value.",
-                param_hint="filter",
-            )
-        key, value = raw_filter.split("=", 1)
-        cleaned_key = key.strip()
-        cleaned_value = value.strip()
-        if not cleaned_key or not cleaned_value:
-            raise click.BadParameter(
-                f"Invalid filter '{raw_filter}'. Use dimension=value.",
-                param_hint="filter",
-            )
-        filters.setdefault(cleaned_key, []).append(cleaned_value)
-    return filters
-
-
-def _format_step_error(exc: Exception) -> str:
-    if isinstance(exc, click.ClickException):
-        return exc.message
-
-    if isinstance(exc, httpx.HTTPStatusError):
-        response = exc.response
-        detail = ""
-        try:
-            payload = response.json()
-        except ValueError:
-            payload = None
-        if isinstance(payload, dict):
-            raw_detail = payload.get("error") or payload.get("detail") or payload.get("message")
-            if isinstance(raw_detail, dict):
-                detail = json.dumps(raw_detail, sort_keys=True)
-            elif raw_detail is not None:
-                detail = str(raw_detail)
-        if not detail:
-            detail = response.text.strip()
-        if detail:
-            return f"{response.status_code} {detail}"
-        return f"{response.status_code} {exc}"
-
-    return str(exc)
-
-
-def _resolve_date_args(
-    period: str | None,
-    current_range: str | None,
-    compare_range: str | None,
-) -> tuple[str, str, str, str]:
-    """Resolve date arguments into (c_from, c_to, p_from, p_to) strings."""
-    from qluent_cli.dates import infer_windows
-
-    if current_range and compare_range:
-        c_from, c_to = current_range.split(":")
-        p_from, p_to = compare_range.split(":")
-    elif current_range:
-        c_from, c_to = current_range.split(":")
-        windows = infer_windows(f"{c_from} {c_to}")
-        p_from = str(windows.comparison.date_from)
-        p_to = str(windows.comparison.date_to)
-    else:
-        period_text = period or "last 7 days"
-        windows = infer_windows(period_text)
-        c_from = str(windows.current.date_from)
-        c_to = str(windows.current.date_to)
-        p_from = str(windows.comparison.date_from)
-        p_to = str(windows.comparison.date_to)
-    return c_from, c_to, p_from, p_to
 
 
 def _collect_trend_evaluations(
@@ -145,12 +73,12 @@ def _resolve_investigation_input(
         except Exception as exc:
             raise click.ClickException(
                 "Failed to load metric trees for question matching: "
-                + _format_step_error(exc)
+                + format_step_error(exc)
             ) from exc
 
         match_result = match_tree_question(question, tree_collection)
         if current_range or compare_range or period:
-            c_from, c_to, p_from, p_to = _resolve_date_args(
+            c_from, c_to, p_from, p_to = resolve_date_args(
                 period,
                 current_range,
                 compare_range,
@@ -171,7 +99,7 @@ def _resolve_investigation_input(
         return resolved_tree_id, match_result, c_from, c_to, p_from, p_to
 
     assert tree_id is not None
-    c_from, c_to, p_from, p_to = _resolve_date_args(period, current_range, compare_range)
+    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
     return tree_id, None, c_from, c_to, p_from, p_to
 
 
@@ -334,6 +262,92 @@ def _derive_agent_status(bundle: dict[str, Any]) -> str:
     return "resolved"
 
 
+_REVENUE_PLAYBOOK = [
+    (
+        "order_volume",
+        "Check whether the change is primarily driven by order volume rather than basket size.",
+    ),
+    (
+        "net_revenue",
+        "Check whether refunds or discounting explain the difference between gross and net performance.",
+    ),
+    (
+        "blended_roas",
+        "Check whether paid spend efficiency or budget changes are amplifying the revenue movement.",
+    ),
+]
+
+
+def _recommend_tree_selection(
+    recommendations: list[dict[str, str]],
+    match_result: dict[str, Any],
+    question: str,
+    period_args: list[str],
+) -> None:
+    """Add tree-selection recommendations when no unambiguous tree was found."""
+    top_candidates = match_result.get("top_candidates") or []
+    best_candidate = next(
+        (
+            str(candidate.get("tree_id"))
+            for candidate in top_candidates
+            if candidate.get("tree_id")
+        ),
+        None,
+    )
+    if best_candidate:
+        _add_recommendation(
+            recommendations,
+            kind="tree_selection",
+            title=f"Investigate {best_candidate}",
+            why="Run the strongest candidate explicitly when the question does not resolve to one unambiguous tree.",
+            command=_agent_command(
+                ["qluent", "trees", "investigate", best_candidate, *period_args, "--json-output"]
+            ),
+        )
+    _add_recommendation(
+        recommendations,
+        kind="tree_discovery",
+        title="Review saved trees",
+        why="Inspect available tree ids and labels before forcing a manual tree selection.",
+        command=_agent_command(["qluent", "trees", "list", "--json-output"]),
+    )
+    _add_recommendation(
+        recommendations,
+        kind="tree_match",
+        title="Inspect tree match candidates",
+        why="Look at match scores and candidate reasons directly if you want to tune the selection logic or choose manually.",
+        command=_agent_command(["qluent", "trees", "match", question, "--json-output"]),
+    )
+
+
+def _recommend_revenue_comparisons(
+    recommendations: list[dict[str, str]],
+    tree_id: str,
+    tree_label: str,
+    compare_trees: tuple[str, ...],
+    period_args: list[str],
+) -> None:
+    """Add revenue-playbook comparison recommendations if the tree looks revenue-related."""
+    revenue_like = "revenue" in tree_id.lower() or "revenue" in tree_label
+    if not revenue_like:
+        return
+    existing_compare_targets = {tree_id, *compare_trees}
+    for compare_tree_id, why in _REVENUE_PLAYBOOK:
+        if compare_tree_id in existing_compare_targets:
+            continue
+        _add_recommendation(
+            recommendations,
+            kind="comparison",
+            title=f"Compare against {compare_tree_id}",
+            why=why,
+            command=_agent_command(
+                ["qluent", "trees", "compare", tree_id, compare_tree_id, *period_args, "--json-output"]
+            ),
+        )
+        if len(recommendations) >= 4:
+            break
+
+
 def _build_recommended_next_steps(
     bundle: dict[str, Any],
     *,
@@ -354,39 +368,7 @@ def _build_recommended_next_steps(
     period_args = _period_command_args(c_from, c_to, p_from, p_to)
 
     if question and not tree_id:
-        top_candidates = match_result.get("top_candidates") or []
-        best_candidate = next(
-            (
-                str(candidate.get("tree_id"))
-                for candidate in top_candidates
-                if candidate.get("tree_id")
-            ),
-            None,
-        )
-        if best_candidate:
-            _add_recommendation(
-                recommendations,
-                kind="tree_selection",
-                title=f"Investigate {best_candidate}",
-                why="Run the strongest candidate explicitly when the question does not resolve to one unambiguous tree.",
-                command=_agent_command(
-                    ["qluent", "trees", "investigate", best_candidate, *period_args, "--json-output"]
-                ),
-            )
-        _add_recommendation(
-            recommendations,
-            kind="tree_discovery",
-            title="Review saved trees",
-            why="Inspect available tree ids and labels before forcing a manual tree selection.",
-            command=_agent_command(["qluent", "trees", "list", "--json-output"]),
-        )
-        _add_recommendation(
-            recommendations,
-            kind="tree_match",
-            title="Inspect tree match candidates",
-            why="Look at match scores and candidate reasons directly if you want to tune the selection logic or choose manually.",
-            command=_agent_command(["qluent", "trees", "match", question, "--json-output"]),
-        )
+        _recommend_tree_selection(recommendations, match_result, question, period_args)
         return recommendations[:3]
 
     assert tree_id is not None
@@ -439,39 +421,160 @@ def _build_recommended_next_steps(
             command=_agent_command(["qluent", "trees", "trend", tree_id, "--periods", "4", "--grain", "week", "--json-output"]),
         )
 
-    revenue_like = "revenue" in tree_id.lower() or "revenue" in tree_label
-    existing_compare_targets = {tree_id, *compare_trees}
-    revenue_playbook = [
-        (
-            "order_volume",
-            "Check whether the change is primarily driven by order volume rather than basket size.",
-        ),
-        (
-            "net_revenue",
-            "Check whether refunds or discounting explain the difference between gross and net performance.",
-        ),
-        (
-            "blended_roas",
-            "Check whether paid spend efficiency or budget changes are amplifying the revenue movement.",
-        ),
-    ]
-    if revenue_like:
-        for compare_tree_id, why in revenue_playbook:
-            if compare_tree_id in existing_compare_targets:
-                continue
-            _add_recommendation(
-                recommendations,
-                kind="comparison",
-                title=f"Compare against {compare_tree_id}",
-                why=why,
-                command=_agent_command(
-                    ["qluent", "trees", "compare", tree_id, compare_tree_id, *period_args, "--json-output"]
-                ),
-            )
-            if len(recommendations) >= 4:
-                break
+    _recommend_revenue_comparisons(
+        recommendations, tree_id, tree_label, compare_trees, period_args
+    )
 
     return recommendations[:4]
+
+
+def _init_investigation_bundle(
+    *,
+    question: str | None,
+    match_result: dict[str, Any] | None,
+    resolved_tree_id: str | None,
+    period_label: str,
+    c_from: str,
+    c_to: str,
+    p_from: str,
+    p_to: str,
+    parsed_filters: dict[str, list[str]],
+    segment_by: tuple[str, ...],
+    trend_grain: str,
+    trend_periods: int,
+    trend_as_of: str | None,
+) -> dict[str, Any]:
+    """Create the initial investigation bundle dict."""
+    return {
+        "question": question,
+        "match": match_result,
+        "tree_id": resolved_tree_id,
+        "tree_label": match_result.get("tree_label") if match_result else resolved_tree_id,
+        "period_label": period_label,
+        "current_window": {"date_from": c_from, "date_to": c_to},
+        "comparison_window": {"date_from": p_from, "date_to": p_to},
+        "filters": parsed_filters,
+        "segment_by_requested": list(segment_by),
+        "segment_by_used": [],
+        "validation": None,
+        "trend": {
+            "grain": trend_grain,
+            "periods": trend_periods,
+            "as_of": trend_as_of,
+            "evaluations": [],
+        },
+        "evaluation": None,
+        "root_cause": None,
+        "comparison": {
+            "period_label": period_label,
+            "results": [],
+            "errors": {},
+        },
+        "step_errors": {},
+        "agent": {
+            "status": "needs_more_data",
+            "top_findings": [],
+            "gaps": [],
+            "recommended_next_steps": [],
+        },
+    }
+
+
+def _run_investigation_steps(
+    *,
+    client: QluentClient,
+    bundle: dict[str, Any],
+    resolved_tree_id: str,
+    c_from: str,
+    c_to: str,
+    p_from: str,
+    p_to: str,
+    segment_by: tuple[str, ...],
+    parsed_filters: dict[str, list[str]],
+    trend_periods: int,
+    trend_grain: str,
+    trend_as_of: str | None,
+    compare_trees: tuple[str, ...],
+    max_depth: int,
+    max_branches: int,
+    max_segments: int,
+    min_contribution_share: float,
+) -> None:
+    """Execute validation, trend, evaluation, RCA, and comparison steps."""
+    validation = None
+    try:
+        validation = client.validate_tree(resolved_tree_id)
+        bundle["validation"] = validation
+    except Exception as exc:  # pragma: no cover - defensive integration handling
+        bundle["step_errors"]["validation"] = format_step_error(exc)
+
+    try:
+        trend_evaluations = _collect_trend_evaluations(
+            client,
+            resolved_tree_id,
+            trend_periods,
+            trend_grain,
+            trend_as_of,
+        )
+        bundle["trend"]["evaluations"] = trend_evaluations
+    except Exception as exc:  # pragma: no cover - defensive integration handling
+        bundle["step_errors"]["trend"] = format_step_error(exc)
+
+    try:
+        evaluation = client.evaluate_tree(resolved_tree_id, c_from, c_to, p_from, p_to)
+        bundle["evaluation"] = evaluation
+        bundle["tree_label"] = evaluation.get("tree_label", resolved_tree_id)
+    except Exception as exc:  # pragma: no cover - defensive integration handling
+        bundle["step_errors"]["evaluation"] = format_step_error(exc)
+
+    segment_by_used = list(segment_by)
+    if not segment_by_used and validation:
+        segment_by_used = list(validation.get("supported_dimensions") or [])[:2]
+    bundle["segment_by_used"] = segment_by_used
+
+    try:
+        root_cause = client.root_cause_tree(
+            resolved_tree_id,
+            c_from,
+            c_to,
+            p_from,
+            p_to,
+            segment_by=segment_by_used,
+            filters=parsed_filters,
+            max_depth=max_depth,
+            max_branching=max_branches,
+            max_segments=max_segments,
+            min_contribution_share=min_contribution_share,
+        )
+        bundle["root_cause"] = root_cause
+        if not bundle.get("tree_label"):
+            bundle["tree_label"] = root_cause.get("tree_label", resolved_tree_id)
+    except Exception as exc:  # pragma: no cover - defensive integration handling
+        bundle["step_errors"]["root_cause"] = format_step_error(exc)
+
+    for compare_tree_id in compare_trees:
+        try:
+            comparison_result = client.evaluate_tree(compare_tree_id, c_from, c_to, p_from, p_to)
+            bundle["comparison"]["results"].append(comparison_result)
+        except Exception as exc:  # pragma: no cover - defensive integration handling
+            bundle["comparison"]["errors"][compare_tree_id] = format_step_error(exc)
+
+
+def _finalize_agent_summary(
+    bundle: dict[str, Any],
+    *,
+    compare_trees: tuple[str, ...],
+) -> None:
+    """Compute and attach the agent summary to the bundle."""
+    bundle["agent"] = {
+        "status": _derive_agent_status(bundle),
+        "top_findings": _collect_agent_top_findings(bundle),
+        "gaps": _collect_agent_gaps(bundle),
+        "recommended_next_steps": _build_recommended_next_steps(
+            bundle,
+            compare_trees=compare_trees,
+        ),
+    }
 
 
 @trees.command(name="list")
@@ -544,7 +647,7 @@ def evaluate(
     as_json: bool,
 ) -> None:
     """Evaluate a metric tree over date windows."""
-    c_from, c_to, p_from, p_to = _resolve_date_args(period, current_range, compare_range)
+    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
     client = QluentClient(load_config())
     data = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
 
@@ -586,7 +689,7 @@ def compare(
     as_json: bool,
 ) -> None:
     """Compare multiple metric trees side by side for the same period."""
-    c_from, c_to, p_from, p_to = _resolve_date_args(period, current_range, compare_range)
+    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
 
     client = QluentClient(load_config())
     results: list[tuple[str, dict[str, Any]]] = []
@@ -645,7 +748,7 @@ def investigate(
     as_json: bool,
 ) -> None:
     """Run a deterministic multi-step investigation bundle for one tree or question."""
-    parsed_filters = _parse_filters(filters)
+    parsed_filters = parse_filters(filters)
 
     client = QluentClient(load_config())
     resolved_tree_id, match_result, c_from, c_to, p_from, p_to = _resolve_investigation_input(
@@ -657,123 +760,44 @@ def investigate(
         compare_range,
     )
     period_label = format_period_label(c_from, c_to, p_from, p_to)
-    bundle: dict[str, Any] = {
-        "question": question,
-        "match": match_result,
-        "tree_id": resolved_tree_id,
-        "tree_label": match_result.get("tree_label") if match_result else resolved_tree_id,
-        "period_label": period_label,
-        "current_window": {"date_from": c_from, "date_to": c_to},
-        "comparison_window": {"date_from": p_from, "date_to": p_to},
-        "filters": parsed_filters,
-        "segment_by_requested": list(segment_by),
-        "segment_by_used": [],
-        "validation": None,
-        "trend": {
-            "grain": trend_grain,
-            "periods": trend_periods,
-            "as_of": trend_as_of,
-            "evaluations": [],
-        },
-        "evaluation": None,
-        "root_cause": None,
-        "comparison": {
-            "period_label": period_label,
-            "results": [],
-            "errors": {},
-        },
-        "step_errors": {},
-        "agent": {
-            "status": "needs_more_data",
-            "top_findings": [],
-            "gaps": [],
-            "recommended_next_steps": [],
-        },
-    }
+    bundle = _init_investigation_bundle(
+        question=question,
+        match_result=match_result,
+        resolved_tree_id=resolved_tree_id,
+        period_label=period_label,
+        c_from=c_from,
+        c_to=c_to,
+        p_from=p_from,
+        p_to=p_to,
+        parsed_filters=parsed_filters,
+        segment_by=segment_by,
+        trend_grain=trend_grain,
+        trend_periods=trend_periods,
+        trend_as_of=trend_as_of,
+    )
 
-    if not resolved_tree_id:
-        bundle["agent"] = {
-            "status": _derive_agent_status(bundle),
-            "top_findings": _collect_agent_top_findings(bundle),
-            "gaps": _collect_agent_gaps(bundle),
-            "recommended_next_steps": _build_recommended_next_steps(
-                bundle,
-                compare_trees=compare_trees,
-            ),
-        }
-        if as_json:
-            click.echo(json.dumps(bundle, indent=2))
-        else:
-            click.echo(format_investigation(bundle))
-        return
-
-    try:
-        validation = client.validate_tree(resolved_tree_id)
-        bundle["validation"] = validation
-    except Exception as exc:  # pragma: no cover - defensive integration handling
-        bundle["step_errors"]["validation"] = _format_step_error(exc)
-        validation = None
-
-    try:
-        trend_evaluations = _collect_trend_evaluations(
-            client,
-            resolved_tree_id,
-            trend_periods,
-            trend_grain,
-            trend_as_of,
-        )
-        bundle["trend"]["evaluations"] = trend_evaluations
-    except Exception as exc:  # pragma: no cover - defensive integration handling
-        bundle["step_errors"]["trend"] = _format_step_error(exc)
-
-    try:
-        evaluation = client.evaluate_tree(resolved_tree_id, c_from, c_to, p_from, p_to)
-        bundle["evaluation"] = evaluation
-        bundle["tree_label"] = evaluation.get("tree_label", resolved_tree_id)
-    except Exception as exc:  # pragma: no cover - defensive integration handling
-        bundle["step_errors"]["evaluation"] = _format_step_error(exc)
-
-    segment_by_used = list(segment_by)
-    if not segment_by_used and validation:
-        segment_by_used = list(validation.get("supported_dimensions") or [])[:2]
-    bundle["segment_by_used"] = segment_by_used
-
-    try:
-        root_cause = client.root_cause_tree(
-            resolved_tree_id,
-            c_from,
-            c_to,
-            p_from,
-            p_to,
-            segment_by=segment_by_used,
-            filters=parsed_filters,
+    if resolved_tree_id:
+        _run_investigation_steps(
+            client=client,
+            bundle=bundle,
+            resolved_tree_id=resolved_tree_id,
+            c_from=c_from,
+            c_to=c_to,
+            p_from=p_from,
+            p_to=p_to,
+            segment_by=segment_by,
+            parsed_filters=parsed_filters,
+            trend_periods=trend_periods,
+            trend_grain=trend_grain,
+            trend_as_of=trend_as_of,
+            compare_trees=compare_trees,
             max_depth=max_depth,
-            max_branching=max_branches,
+            max_branches=max_branches,
             max_segments=max_segments,
             min_contribution_share=min_contribution_share,
         )
-        bundle["root_cause"] = root_cause
-        if not bundle.get("tree_label"):
-            bundle["tree_label"] = root_cause.get("tree_label", resolved_tree_id)
-    except Exception as exc:  # pragma: no cover - defensive integration handling
-        bundle["step_errors"]["root_cause"] = _format_step_error(exc)
 
-    for compare_tree_id in compare_trees:
-        try:
-            comparison_result = client.evaluate_tree(compare_tree_id, c_from, c_to, p_from, p_to)
-            bundle["comparison"]["results"].append(comparison_result)
-        except Exception as exc:  # pragma: no cover - defensive integration handling
-            bundle["comparison"]["errors"][compare_tree_id] = _format_step_error(exc)
-
-    bundle["agent"] = {
-        "status": _derive_agent_status(bundle),
-        "top_findings": _collect_agent_top_findings(bundle),
-        "gaps": _collect_agent_gaps(bundle),
-        "recommended_next_steps": _build_recommended_next_steps(
-            bundle,
-            compare_trees=compare_trees,
-        ),
-    }
+    _finalize_agent_summary(bundle, compare_trees=compare_trees)
 
     if as_json:
         click.echo(json.dumps(bundle, indent=2))

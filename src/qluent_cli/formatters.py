@@ -217,6 +217,156 @@ def format_evaluation(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _fmt_driver_summary(contributors: list[dict[str, Any]]) -> str:
+    """Format a list of contributors into a comma-separated driver summary."""
+    parts = []
+    for contributor in contributors:
+        part = f"{contributor['label']} {_fmt_num(contributor['delta_value'], signed=True)}"
+        if contributor.get("delta_share") is not None:
+            part += f" ({_fmt_share(contributor['delta_share'])})"
+        parts.append(part)
+    return ", ".join(parts)
+
+
+def _fmt_rca_conclusion(conclusion: dict[str, Any], lines: list[str]) -> None:
+    """Append conclusion section lines for an RCA result."""
+    confidence_score = conclusion.get("confidence_score")
+    confidence_line = f"  Evidence confidence: {conclusion['confidence']}"
+    if confidence_score is not None:
+        confidence_line += f" (coverage score {confidence_score * 100:.0f}%)"
+    lines.append(confidence_line)
+    if conclusion.get("confidence_description"):
+        lines.append(f"  {conclusion['confidence_description']}")
+    if conclusion.get("evidence_types_present"):
+        lines.append(
+            "  Evidence present: "
+            + ", ".join(conclusion["evidence_types_present"])
+        )
+    if conclusion.get("evidence_types_missing"):
+        lines.append(
+            "  Evidence missing: "
+            + ", ".join(conclusion["evidence_types_missing"])
+        )
+
+    takeaways = conclusion.get("takeaways", [])
+    if takeaways:
+        lines.append("")
+        lines.append("  Top takeaways:")
+        for index, takeaway in enumerate(takeaways[:5], start=1):
+            lines.append(f"    {index}. {takeaway['summary']}")
+
+    unresolved = conclusion.get("unresolved_nodes", [])
+    if unresolved:
+        lines.append("")
+        lines.append("  Unresolved branches:")
+        for item in unresolved[:3]:
+            lines.append(f"    - {item['summary']}")
+
+
+def _fmt_rca_time_slices(data: dict[str, Any], lines: list[str]) -> None:
+    """Append time-slice section lines for an RCA result."""
+    time_slices = data.get("time_slices", [])
+    if not time_slices:
+        return
+    lines.append("")
+    lines.append(f"  Largest time slices ({data.get('time_slice_grain', 'day')}):")
+    ranked_slices = sorted(
+        time_slices,
+        key=lambda item: abs(item.get("delta_value", 0)),
+        reverse=True,
+    )
+    for slice_result in ranked_slices[:3]:
+        summary = (
+            f"    {_fmt_window(slice_result['current_window'])} vs {_fmt_window(slice_result['comparison_window'])}: "
+            f"Δ {_fmt_num(slice_result['delta_value'], signed=True)} ({_fmt_pct(slice_result.get('delta_ratio'))})"
+        )
+        if slice_result.get("share_of_change") is not None:
+            summary += f" | {_fmt_share(slice_result['share_of_change'])} of change"
+        lines.append(summary)
+
+        top_contributors = slice_result.get("top_contributors", [])
+        if top_contributors:
+            lines.append(f"      drivers: " + _fmt_driver_summary(top_contributors))
+
+
+def _fmt_rca_mix_shift(data: dict[str, Any], lines: list[str]) -> None:
+    """Append mix-shift section lines for an RCA result."""
+    mix_shift = data.get("mix_shift")
+    if not mix_shift or not mix_shift.get("segments"):
+        return
+    lines.append("")
+    lines.append(f"  Mix shift ({mix_shift['dimension']}):")
+    for segment in mix_shift["segments"][:3]:
+        summary = (
+            f"    {segment['segment']}: Δ {_fmt_num(segment['delta_value'], signed=True)}"
+        )
+        if (
+            segment.get("comparison_share") is not None
+            and segment.get("current_share") is not None
+        ):
+            summary += (
+                f" | share {_fmt_share(segment['comparison_share'])}"
+                f" → {_fmt_share(segment['current_share'])}"
+                f" ({_fmt_share_delta(segment.get('share_delta'))})"
+            )
+        if segment.get("baseline_effect") is not None:
+            summary += f" | baseline {_fmt_num(segment['baseline_effect'], signed=True)}"
+        if segment.get("mix_effect") is not None:
+            summary += f" | mix {_fmt_num(segment['mix_effect'], signed=True)}"
+        lines.append(summary)
+
+
+def _fmt_rca_finding(finding: dict[str, Any], lines: list[str]) -> None:
+    """Append a single finding block for an RCA result."""
+    indent = "    " + ("  " * finding.get("depth", 0))
+    summary = (
+        f"{finding['label']}: Δ {_fmt_num(finding['delta_value'], signed=True)} "
+        f"({_fmt_pct(finding.get('delta_ratio'))})"
+    )
+    if finding.get("contribution_value") is not None:
+        summary += (
+            f" | parent contribution {_fmt_num(finding['contribution_value'], signed=True)}"
+        )
+        if finding.get("contribution_share") is not None:
+            summary += f" ({_fmt_share(finding['contribution_share'])})"
+    lines.append(f"{indent}{summary}")
+
+    direct_contributors = finding.get("direct_contributors", [])
+    if direct_contributors:
+        lines.append(f"{indent}  child drivers: " + _fmt_driver_summary(direct_contributors))
+
+    formula_analysis = finding.get("formula_analysis")
+    if formula_analysis and formula_analysis.get("effects"):
+        non_zero_effects = [
+            effect
+            for effect in formula_analysis["effects"]
+            if abs(effect.get("effect_value", 0)) > 1e-9
+        ]
+        visible_effects = non_zero_effects or formula_analysis["effects"][:1]
+        effect_parts = [
+            f"{effect['label']} {_fmt_num(effect['effect_value'], signed=True)}"
+            for effect in visible_effects
+        ]
+        lines.append(f"{indent}  mechanism: " + ", ".join(effect_parts))
+
+    segment_dimension = finding.get("segment_dimension")
+    segment_findings = finding.get("segment_findings", [])
+    if segment_dimension and segment_findings:
+        segment_parts = []
+        for segment in segment_findings[:3]:
+            part = (
+                f"{segment['segment']} {_fmt_num(segment['delta_value'], signed=True)}"
+            )
+            if segment.get("share_of_change") is not None:
+                part += f" ({_fmt_share(segment['share_of_change'])})"
+            else:
+                part += f" ({_fmt_pct(segment.get('delta_ratio'))})"
+            segment_parts.append(part)
+        lines.append(
+            f"{indent}  best segment cut: {segment_dimension} -> " + ", ".join(segment_parts)
+        )
+
+
 def format_root_cause(data: dict[str, Any]) -> str:
     """Format root-cause analysis results for human consumption."""
     cw = data["current_window"]
@@ -239,147 +389,17 @@ def format_root_cause(data: dict[str, Any]) -> str:
 
     conclusion = data.get("conclusion")
     if conclusion:
-        confidence_score = conclusion.get("confidence_score")
-        confidence_line = f"  Evidence confidence: {conclusion['confidence']}"
-        if confidence_score is not None:
-            confidence_line += f" (coverage score {confidence_score * 100:.0f}%)"
-        lines.append(confidence_line)
-        if conclusion.get("confidence_description"):
-            lines.append(f"  {conclusion['confidence_description']}")
-        if conclusion.get("evidence_types_present"):
-            lines.append(
-                "  Evidence present: "
-                + ", ".join(conclusion["evidence_types_present"])
-            )
-        if conclusion.get("evidence_types_missing"):
-            lines.append(
-                "  Evidence missing: "
-                + ", ".join(conclusion["evidence_types_missing"])
-            )
+        _fmt_rca_conclusion(conclusion, lines)
 
-        takeaways = conclusion.get("takeaways", [])
-        if takeaways:
-            lines.append("")
-            lines.append("  Top takeaways:")
-            for index, takeaway in enumerate(takeaways[:5], start=1):
-                lines.append(f"    {index}. {takeaway['summary']}")
-
-        unresolved = conclusion.get("unresolved_nodes", [])
-        if unresolved:
-            lines.append("")
-            lines.append("  Unresolved branches:")
-            for item in unresolved[:3]:
-                lines.append(f"    - {item['summary']}")
-
-    time_slices = data.get("time_slices", [])
-    if time_slices:
-        lines.append("")
-        lines.append(f"  Largest time slices ({data.get('time_slice_grain', 'day')}):")
-        ranked_slices = sorted(
-            time_slices,
-            key=lambda item: abs(item.get("delta_value", 0)),
-            reverse=True,
-        )
-        for slice_result in ranked_slices[:3]:
-            summary = (
-                f"    {_fmt_window(slice_result['current_window'])} vs {_fmt_window(slice_result['comparison_window'])}: "
-                f"Δ {_fmt_num(slice_result['delta_value'], signed=True)} ({_fmt_pct(slice_result.get('delta_ratio'))})"
-            )
-            if slice_result.get("share_of_change") is not None:
-                summary += f" | {_fmt_share(slice_result['share_of_change'])} of change"
-            lines.append(summary)
-
-            top_contributors = slice_result.get("top_contributors", [])
-            if top_contributors:
-                driver_parts = []
-                for contributor in top_contributors:
-                    part = f"{contributor['label']} {_fmt_num(contributor['delta_value'], signed=True)}"
-                    if contributor.get("delta_share") is not None:
-                        part += f" ({_fmt_share(contributor['delta_share'])})"
-                    driver_parts.append(part)
-                lines.append(f"      drivers: " + ", ".join(driver_parts))
-
-    mix_shift = data.get("mix_shift")
-    if mix_shift and mix_shift.get("segments"):
-        lines.append("")
-        lines.append(f"  Mix shift ({mix_shift['dimension']}):")
-        for segment in mix_shift["segments"][:3]:
-            summary = (
-                f"    {segment['segment']}: Δ {_fmt_num(segment['delta_value'], signed=True)}"
-            )
-            if (
-                segment.get("comparison_share") is not None
-                and segment.get("current_share") is not None
-            ):
-                summary += (
-                    f" | share {_fmt_share(segment['comparison_share'])}"
-                    f" → {_fmt_share(segment['current_share'])}"
-                    f" ({_fmt_share_delta(segment.get('share_delta'))})"
-                )
-            if segment.get("baseline_effect") is not None:
-                summary += f" | baseline {_fmt_num(segment['baseline_effect'], signed=True)}"
-            if segment.get("mix_effect") is not None:
-                summary += f" | mix {_fmt_num(segment['mix_effect'], signed=True)}"
-            lines.append(summary)
+    _fmt_rca_time_slices(data, lines)
+    _fmt_rca_mix_shift(data, lines)
 
     findings = data.get("findings", [])
     if findings:
         lines.append("")
         lines.append("  Findings:")
         for finding in findings:
-            indent = "    " + ("  " * finding.get("depth", 0))
-            summary = (
-                f"{finding['label']}: Δ {_fmt_num(finding['delta_value'], signed=True)} "
-                f"({_fmt_pct(finding.get('delta_ratio'))})"
-            )
-            if finding.get("contribution_value") is not None:
-                summary += (
-                    f" | parent contribution {_fmt_num(finding['contribution_value'], signed=True)}"
-                )
-                if finding.get("contribution_share") is not None:
-                    summary += f" ({_fmt_share(finding['contribution_share'])})"
-            lines.append(f"{indent}{summary}")
-
-            direct_contributors = finding.get("direct_contributors", [])
-            if direct_contributors:
-                driver_parts = []
-                for contributor in direct_contributors:
-                    part = f"{contributor['label']} {_fmt_num(contributor['delta_value'], signed=True)}"
-                    if contributor.get("delta_share") is not None:
-                        part += f" ({_fmt_share(contributor['delta_share'])})"
-                    driver_parts.append(part)
-                lines.append(f"{indent}  child drivers: " + ", ".join(driver_parts))
-
-            formula_analysis = finding.get("formula_analysis")
-            if formula_analysis and formula_analysis.get("effects"):
-                non_zero_effects = [
-                    effect
-                    for effect in formula_analysis["effects"]
-                    if abs(effect.get("effect_value", 0)) > 1e-9
-                ]
-                visible_effects = non_zero_effects or formula_analysis["effects"][:1]
-                effect_parts = [
-                    f"{effect['label']} {_fmt_num(effect['effect_value'], signed=True)}"
-                    for effect in visible_effects
-                ]
-                lines.append(f"{indent}  mechanism: " + ", ".join(effect_parts))
-
-            segment_dimension = finding.get("segment_dimension")
-            segment_findings = finding.get("segment_findings", [])
-            if segment_dimension and segment_findings:
-                segment_parts = []
-                for segment in segment_findings[:3]:
-                    part = (
-                        f"{segment['segment']} {_fmt_num(segment['delta_value'], signed=True)}"
-                    )
-                    if segment.get("share_of_change") is not None:
-                        part += f" ({_fmt_share(segment['share_of_change'])})"
-                    else:
-                        part += f" ({_fmt_pct(segment.get('delta_ratio'))})"
-                    segment_parts.append(part)
-                lines.append(
-                    f"{indent}  best segment cut: {segment_dimension} -> " + ", ".join(segment_parts)
-                )
+            _fmt_rca_finding(finding, lines)
 
     warnings = data.get("warnings", [])
     if warnings:
@@ -606,8 +626,8 @@ def format_comparison(tree_results: list[tuple[str, dict]], period_label: str) -
     return "\n".join(lines)
 
 
-def format_investigation(data: dict[str, Any]) -> str:
-    """Format a bundled metric tree investigation."""
+def _fmt_investigation_header(data: dict[str, Any], lines: list[str]) -> str:
+    """Append investigation header lines and return the resolved tree label."""
     evaluation = data.get("evaluation") or {}
     validation = data.get("validation") or {}
     root_cause = data.get("root_cause") or {}
@@ -621,7 +641,7 @@ def format_investigation(data: dict[str, Any]) -> str:
         or data.get("tree_id", "?")
     )
 
-    lines = [f"{tree_label} Investigation", ""]
+    lines.extend([f"{tree_label} Investigation", ""])
     if data.get("question"):
         lines.append(f'  Question: "{data["question"]}"')
     if match_result:
@@ -653,6 +673,13 @@ def format_investigation(data: dict[str, Any]) -> str:
             + str(agent["status"]).replace("_", " ")
         )
 
+    return tree_label
+
+
+def _fmt_investigation_agent(data: dict[str, Any], lines: list[str]) -> None:
+    """Append agent findings, gaps, and recommendations."""
+    agent = data.get("agent") or {}
+
     top_findings = agent.get("top_findings") or []
     if top_findings:
         lines.extend(["", "  Top findings:"])
@@ -674,7 +701,15 @@ def format_investigation(data: dict[str, Any]) -> str:
             if step.get("command"):
                 lines.append(f"      {step['command']}")
 
+
+def _fmt_investigation_step_results(
+    data: dict[str, Any], tree_label: str, lines: list[str]
+) -> None:
+    """Append validation, trend, evaluation, RCA, and comparison results."""
     step_errors = data.get("step_errors") or {}
+    validation = data.get("validation") or {}
+    evaluation = data.get("evaluation") or {}
+    root_cause = data.get("root_cause") or {}
 
     if validation:
         lines.extend(["", format_tree_validation(validation)])
@@ -738,4 +773,11 @@ def format_investigation(data: dict[str, Any]) -> str:
         for key, message in sorted(residual_errors.items()):
             lines.append(f"  ! {key}: {message}")
 
+
+def format_investigation(data: dict[str, Any]) -> str:
+    """Format a bundled metric tree investigation."""
+    lines: list[str] = []
+    tree_label = _fmt_investigation_header(data, lines)
+    _fmt_investigation_agent(data, lines)
+    _fmt_investigation_step_results(data, tree_label, lines)
     return "\n".join(lines)

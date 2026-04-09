@@ -39,6 +39,10 @@ def _fmt_elasticity(elasticity: float | None) -> str:
     return f"{elasticity:+.2f}"
 
 
+def _fmt_direction(direction: str | None) -> str:
+    return direction or "neutral"
+
+
 def _fmt_share_delta(share: float | None) -> str:
     if share is None:
         return "n/a"
@@ -223,6 +227,51 @@ def format_evaluation(data: dict[str, Any]) -> str:
         lines.append("")
         for w in warnings:
             lines.append(f"  ! {w}")
+
+    return "\n".join(lines)
+
+
+def format_levers(data: dict[str, Any]) -> str:
+    """Format lever-analysis results from evaluation elasticities."""
+    cw = data["current_window"]
+    pw = data["comparison_window"]
+    header = (
+        f"{data['tree_label']} Levers — "
+        f"{_fmt_date(cw['date_from'])}–{_fmt_date(cw['date_to'])} vs "
+        f"{_fmt_date(pw['date_from'])}–{_fmt_date(pw['date_to'])}"
+    )
+
+    lines = [
+        header,
+        "",
+        (
+            f"  {data['tree_label']}: {_fmt_num(data['comparison_value'])} → {_fmt_num(data['current_value'])}  "
+            f"Δ {_fmt_num(data['delta_value'], signed=True)} ({_fmt_pct(data.get('delta_ratio'))})"
+        ),
+    ]
+
+    top_levers = data.get("top_levers") or []
+    if top_levers:
+        lines.extend(["", "  Top levers:"])
+        for lever in top_levers:
+            lines.append(
+                f"    {lever['label']}  ε {_fmt_elasticity(lever.get('elasticity')):>6}  "
+                f"best action: {_fmt_direction(lever.get('recommended_direction'))}"
+            )
+            for impact in lever.get("scenario_impacts") or []:
+                lines.append(
+                    f"      +{impact['node_change_ratio'] * 100:.0f}% node → "
+                    f"root {_fmt_pct(impact.get('estimated_root_delta_ratio'))} "
+                    f"(Δ {_fmt_num(impact['estimated_root_delta_value'], signed=True)})"
+                )
+    else:
+        lines.extend(["", "  No non-root nodes had defined elasticities."])
+
+    warnings = data.get("warnings") or []
+    if warnings:
+        lines.append("")
+        for warning in warnings:
+            lines.append(f"  ! {warning}")
 
     return "\n".join(lines)
 
@@ -719,6 +768,7 @@ def _fmt_investigation_step_results(
     step_errors = data.get("step_errors") or {}
     validation = data.get("validation") or {}
     evaluation = data.get("evaluation") or {}
+    levers = data.get("levers") or {}
     root_cause = data.get("root_cause") or {}
 
     if validation:
@@ -746,6 +796,9 @@ def _fmt_investigation_step_results(
         lines.extend(["", format_evaluation(evaluation)])
     elif "evaluation" in step_errors:
         lines.extend(["", f"Evaluation failed: {step_errors['evaluation']}"])
+
+    if levers.get("top_levers"):
+        lines.extend(["", format_levers(levers)])
 
     if root_cause:
         lines.extend(["", format_root_cause(root_cause)])

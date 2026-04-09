@@ -249,6 +249,211 @@ def test_trees_match_reports_ambiguous_candidates(monkeypatch):
     ]
 
 
+def test_trees_levers_outputs_ranked_scenarios(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_evaluate_tree(self, tree_id, current_from, current_to, comparison_from, comparison_to):
+        assert tree_id == "revenue"
+        assert current_from == "2026-03-09"
+        assert current_to == "2026-03-15"
+        assert comparison_from == "2026-03-02"
+        assert comparison_to == "2026-03-08"
+        return {
+            "tree_id": "revenue",
+            "tree_label": "Revenue",
+            "root_node_id": "revenue",
+            "current_window": {"date_from": current_from, "date_to": current_to},
+            "comparison_window": {"date_from": comparison_from, "date_to": comparison_to},
+            "current_value": 1000,
+            "comparison_value": 900,
+            "delta_value": 100,
+            "delta_ratio": 0.1111111111,
+            "top_contributors": [],
+            "nodes": [
+                {
+                    "id": "revenue",
+                    "label": "Revenue",
+                    "kind": "formula",
+                    "current_value": 1000,
+                    "comparison_value": 900,
+                    "delta_value": 100,
+                    "delta_ratio": 0.1111111111,
+                    "contributions": [],
+                    "sensitivity": 1.0,
+                    "elasticity": 1.0,
+                },
+                {
+                    "id": "orders",
+                    "label": "Orders",
+                    "kind": "sql_metric",
+                    "current_value": 100,
+                    "comparison_value": 90,
+                    "delta_value": 10,
+                    "delta_ratio": 0.1111111111,
+                    "contributions": [],
+                    "sensitivity": 10.0,
+                    "elasticity": 1.2,
+                },
+                {
+                    "id": "aov",
+                    "label": "AOV",
+                    "kind": "sql_metric",
+                    "current_value": 10,
+                    "comparison_value": 10,
+                    "delta_value": 0,
+                    "delta_ratio": 0.0,
+                    "contributions": [],
+                    "sensitivity": 100.0,
+                    "elasticity": 0.8,
+                },
+                {
+                    "id": "spend",
+                    "label": "Spend",
+                    "kind": "sql_metric",
+                    "current_value": 250,
+                    "comparison_value": 240,
+                    "delta_value": 10,
+                    "delta_ratio": 0.0416666667,
+                    "contributions": [],
+                    "sensitivity": -4.0,
+                    "elasticity": -0.6,
+                },
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.evaluate_tree", mock_evaluate_tree)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "levers",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--scenario",
+            "0.02",
+            "--scenario",
+            "0.1",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["tree_id"] == "revenue"
+    assert payload["scenarios"] == [0.02, 0.1]
+    assert [lever["node_id"] for lever in payload["top_levers"]] == [
+        "orders",
+        "aov",
+        "spend",
+    ]
+    assert payload["top_levers"][0]["recommended_direction"] == "increase"
+    assert payload["top_levers"][2]["recommended_direction"] == "decrease"
+    assert payload["top_levers"][0]["scenario_impacts"][0] == {
+        "node_change_ratio": 0.02,
+        "estimated_root_delta_ratio": 0.024,
+        "estimated_root_delta_value": 24.0,
+    }
+    assert "local linear estimates" in payload["warnings"][-1]
+
+
+def test_trees_levers_formats_human_output(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_evaluate_tree(self, tree_id, current_from, current_to, comparison_from, comparison_to):
+        return {
+            "tree_id": "roas",
+            "tree_label": "ROAS",
+            "root_node_id": "roas",
+            "current_window": {"date_from": current_from, "date_to": current_to},
+            "comparison_window": {"date_from": comparison_from, "date_to": comparison_to},
+            "current_value": 50,
+            "comparison_value": 40,
+            "delta_value": 10,
+            "delta_ratio": 0.25,
+            "top_contributors": [],
+            "nodes": [
+                {
+                    "id": "roas",
+                    "label": "ROAS",
+                    "kind": "formula",
+                    "current_value": 50,
+                    "comparison_value": 40,
+                    "delta_value": 10,
+                    "delta_ratio": 0.25,
+                    "contributions": [],
+                    "sensitivity": 1.0,
+                    "elasticity": 1.0,
+                },
+                {
+                    "id": "revenue",
+                    "label": "Revenue",
+                    "kind": "sql_metric",
+                    "current_value": 1000,
+                    "comparison_value": 900,
+                    "delta_value": 100,
+                    "delta_ratio": 0.1111111111,
+                    "contributions": [],
+                    "sensitivity": 0.05,
+                    "elasticity": 1.1,
+                },
+                {
+                    "id": "spend",
+                    "label": "Spend",
+                    "kind": "sql_metric",
+                    "current_value": 20,
+                    "comparison_value": 22.5,
+                    "delta_value": -2.5,
+                    "delta_ratio": -0.1111111111,
+                    "contributions": [],
+                    "sensitivity": -2.5,
+                    "elasticity": -0.9,
+                },
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.evaluate_tree", mock_evaluate_tree)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "levers",
+            "roas",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "ROAS Levers" in result.output
+    assert "best action: decrease" in result.output
+    assert "+5% node → root" in result.output
+
+
 def test_trees_investigate_bundles_deterministic_steps(monkeypatch):
     monkeypatch.setattr(
         "qluent_cli.trees.load_config",
@@ -564,3 +769,186 @@ def test_trees_investigate_matches_question_for_agent_flow(monkeypatch):
         "2026-03-02",
         "2026-03-08",
     ) in evaluate_calls
+
+
+def test_trees_investigate_embeds_levers_for_lever_questions(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_list_trees(self):
+        return {
+            "trees": [
+                {
+                    "id": "revenue",
+                    "label": "Revenue",
+                    "description": "Total revenue from completed orders",
+                    "dimensions": ["channel"],
+                    "nodes": [
+                        {"id": "revenue", "label": "Revenue", "kind": "formula"},
+                        {"id": "orders", "label": "Orders", "kind": "sql_metric"},
+                        {"id": "aov", "label": "AOV", "kind": "sql_metric"},
+                    ],
+                }
+            ]
+        }
+
+    def mock_validate_tree(self, tree_id):
+        return {
+            "tree_id": "revenue",
+            "tree_label": "Revenue",
+            "valid": True,
+            "dimensions_declared": ["channel"],
+            "supported_dimensions": ["channel"],
+            "leaf_nodes": [],
+            "errors": [],
+            "warnings": [],
+        }
+
+    def mock_evaluate_tree(self, tree_id, current_from, current_to, comparison_from, comparison_to):
+        return {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "root_node_id": tree_id,
+            "current_window": {"date_from": current_from, "date_to": current_to},
+            "comparison_window": {"date_from": comparison_from, "date_to": comparison_to},
+            "current_value": 1000,
+            "comparison_value": 900,
+            "delta_value": 100,
+            "delta_ratio": 0.1111111111,
+            "top_contributors": [
+                {
+                    "node_id": "orders",
+                    "label": "Orders",
+                    "delta_value": 80,
+                    "delta_share": 0.8,
+                }
+            ],
+            "nodes": [
+                {
+                    "id": "revenue",
+                    "label": "Revenue",
+                    "kind": "formula",
+                    "current_value": 1000,
+                    "comparison_value": 900,
+                    "delta_value": 100,
+                    "delta_ratio": 0.1111111111,
+                    "contributions": [],
+                    "sensitivity": 1.0,
+                    "elasticity": 1.0,
+                },
+                {
+                    "id": "orders",
+                    "label": "Orders",
+                    "kind": "sql_metric",
+                    "current_value": 100,
+                    "comparison_value": 90,
+                    "delta_value": 10,
+                    "delta_ratio": 0.1111111111,
+                    "contributions": [],
+                    "sensitivity": 10.0,
+                    "elasticity": 1.3,
+                },
+                {
+                    "id": "aov",
+                    "label": "AOV",
+                    "kind": "sql_metric",
+                    "current_value": 10,
+                    "comparison_value": 10,
+                    "delta_value": 0,
+                    "delta_ratio": 0.0,
+                    "contributions": [],
+                    "sensitivity": 100.0,
+                    "elasticity": 0.7,
+                },
+            ],
+            "warnings": [],
+        }
+
+    def mock_root_cause_tree(
+        self,
+        tree_id,
+        current_from,
+        current_to,
+        comparison_from,
+        comparison_to,
+        *,
+        segment_by,
+        filters,
+        max_depth,
+        max_branching,
+        max_segments,
+        min_contribution_share,
+    ):
+        return {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "root_node_id": tree_id,
+            "current_window": {"date_from": current_from, "date_to": current_to},
+            "comparison_window": {"date_from": comparison_from, "date_to": comparison_to},
+            "current_value": 1000,
+            "comparison_value": 900,
+            "delta_value": 100,
+            "delta_ratio": 0.1111111111,
+            "dimensions_considered": ["channel"],
+            "time_slice_grain": "day",
+            "time_slices": [],
+            "mix_shift": None,
+            "conclusion": {
+                "confidence": "high",
+                "confidence_score": 0.8,
+                "confidence_type": "evidence_coverage_heuristic",
+                "confidence_description": "Broad deterministic evidence is present.",
+                "evidence_types_present": ["driver"],
+                "evidence_types_missing": [],
+                "confidence_factors": [],
+                "takeaways": [
+                    {
+                        "kind": "driver",
+                        "title": "Orders drove the change",
+                        "summary": "Orders explain most of the revenue increase.",
+                        "score": 1.1,
+                        "node_id": "orders",
+                        "path": ["revenue", "orders"],
+                        "delta_value": 80,
+                        "effect_value": None,
+                        "share_of_change": 0.8,
+                        "dimension": None,
+                        "segment": None,
+                        "current_window": None,
+                        "comparison_window": None,
+                    }
+                ],
+                "unresolved_nodes": [],
+            },
+            "findings": [],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.list_trees", mock_list_trees)
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.validate_tree", mock_validate_tree)
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.evaluate_tree", mock_evaluate_tree)
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.root_cause_tree", mock_root_cause_tree)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "investigate",
+            "--question",
+            "What are the biggest levers for revenue from 2026-03-09 to 2026-03-15 compared with 2026-03-02 to 2026-03-08?",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["levers"]["top_levers"][0]["node_id"] == "orders"
+    assert "biggest lever" in payload["agent"]["top_findings"][0]
+    assert payload["agent"]["recommended_next_steps"][0]["kind"] == "levers"

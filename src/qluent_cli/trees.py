@@ -15,6 +15,7 @@ from qluent_cli.formatters import (
     format_comparison,
     format_evaluation,
     format_investigation,
+    format_levers,
     format_period_label,
     format_trend,
     format_tree_detail,
@@ -29,6 +30,149 @@ from qluent_cli.utils import format_step_error, parse_filters, resolve_date_args
 @click.group()
 def trees() -> None:
     """Metric tree commands."""
+
+
+_DEFAULT_LEVER_SCENARIOS = (0.01, 0.05, 0.10)
+_LEVER_KEYWORDS = (
+    "elasticity",
+    "sensitivity",
+    "lever",
+    "levers",
+    "impact",
+    "what if",
+    "what-if",
+    "scenario",
+    "scenarios",
+    "if we",
+    "increase",
+    "decrease",
+)
+
+
+def _is_lever_question(question: str | None) -> bool:
+    if not question:
+        return False
+    question_lower = question.lower()
+    return any(keyword in question_lower for keyword in _LEVER_KEYWORDS)
+
+
+def _build_lever_analysis(
+    evaluation: dict[str, Any],
+    *,
+    top_n: int,
+    scenarios: tuple[float, ...] | list[float],
+) -> dict[str, Any] | None:
+    """Build a deterministic lever summary from evaluation elasticities."""
+    if not evaluation:
+        return None
+
+    current_root_value = evaluation.get("current_value")
+    if not isinstance(current_root_value, (int, float)):
+        return None
+
+    deduped_scenarios: list[float] = []
+    seen_scenarios: set[float] = set()
+    for scenario in scenarios:
+        scenario_value = float(scenario)
+        if scenario_value <= 0 or scenario_value in seen_scenarios:
+            continue
+        seen_scenarios.add(scenario_value)
+        deduped_scenarios.append(scenario_value)
+    if not deduped_scenarios:
+        deduped_scenarios = list(_DEFAULT_LEVER_SCENARIOS)
+
+    root_node_id = evaluation.get("root_node_id")
+    ranked_levers: list[tuple[float, dict[str, Any]]] = []
+    for node in evaluation.get("nodes") or []:
+        node_id = node.get("id")
+        elasticity = node.get("elasticity")
+        if node_id == root_node_id or elasticity is None:
+            continue
+        if not isinstance(elasticity, (int, float)):
+            continue
+
+        recommended_direction = "neutral"
+        if elasticity > 0:
+            recommended_direction = "increase"
+        elif elasticity < 0:
+            recommended_direction = "decrease"
+
+        scenario_impacts = [
+            {
+                "node_change_ratio": scenario,
+                "estimated_root_delta_ratio": elasticity * scenario,
+                "estimated_root_delta_value": current_root_value * elasticity * scenario,
+            }
+            for scenario in deduped_scenarios
+        ]
+
+        ranked_levers.append(
+            (
+                abs(elasticity),
+                {
+                    "node_id": node_id,
+                    "label": node.get("label") or node_id,
+                    "current_value": node.get("current_value"),
+                    "delta_value": node.get("delta_value"),
+                    "delta_ratio": node.get("delta_ratio"),
+                    "sensitivity": node.get("sensitivity"),
+                    "elasticity": elasticity,
+                    "recommended_direction": recommended_direction,
+                    "scenario_impacts": scenario_impacts,
+                },
+            )
+        )
+
+    ranked_levers.sort(key=lambda item: item[0], reverse=True)
+    top_levers = [item[1] for item in ranked_levers[:top_n]]
+
+    warnings: list[str] = []
+    if not top_levers:
+        warnings.append("No non-root nodes had defined elasticities for this tree.")
+    warnings.append(
+        "Lever impacts are local linear estimates based on current elasticities; treat them as directional guidance, not forecasts."
+    )
+
+    return {
+        "tree_id": evaluation.get("tree_id"),
+        "tree_label": evaluation.get("tree_label"),
+        "root_node_id": root_node_id,
+        "current_window": evaluation.get("current_window"),
+        "comparison_window": evaluation.get("comparison_window"),
+        "current_value": current_root_value,
+        "comparison_value": evaluation.get("comparison_value"),
+        "delta_value": evaluation.get("delta_value"),
+        "delta_ratio": evaluation.get("delta_ratio"),
+        "scenarios": deduped_scenarios,
+        "top_levers": top_levers,
+        "warnings": warnings,
+    }
+
+
+def _collect_lever_findings(bundle: dict[str, Any]) -> list[str]:
+    """Summarize the strongest available lever signals."""
+    levers = bundle.get("levers") or {}
+    top_levers = levers.get("top_levers") or []
+    if not top_levers:
+        return []
+
+    scenario_lookup = {}
+    for impact in top_levers[0].get("scenario_impacts") or []:
+        scenario_lookup[impact.get("node_change_ratio")] = impact
+    preferred_scenario = scenario_lookup.get(0.05)
+    if preferred_scenario is None:
+        preferred_scenario = (top_levers[0].get("scenario_impacts") or [None])[0]
+    if preferred_scenario is None:
+        return []
+
+    label = top_levers[0].get("label") or top_levers[0].get("node_id") or "Unknown"
+    elasticity = top_levers[0].get("elasticity")
+    change_ratio = preferred_scenario.get("node_change_ratio", 0)
+    root_ratio = preferred_scenario.get("estimated_root_delta_ratio", 0)
+    root_value = preferred_scenario.get("estimated_root_delta_value", 0)
+    return [
+        f"{label} is the biggest lever (ε {elasticity:+.2f}); +{change_ratio * 100:.0f}% implies root {root_ratio * 100:+.1f}% (Δ {root_value:+.0f})."
+    ]
 
 
 def _collect_trend_evaluations(
@@ -139,6 +283,10 @@ def _add_recommendation(
 def _collect_agent_top_findings(bundle: dict[str, Any]) -> list[str]:
     """Summarize the strongest available evidence for an investigation."""
     findings: list[str] = []
+    if _is_lever_question(bundle.get("question")):
+        findings.extend(_collect_lever_findings(bundle))
+        if len(findings) >= 3:
+            return findings[:3]
 
     root_cause = bundle.get("root_cause") or {}
     conclusion = root_cause.get("conclusion") or {}
@@ -147,9 +295,9 @@ def _collect_agent_top_findings(bundle: dict[str, Any]) -> list[str]:
         if summary:
             findings.append(str(summary))
         if len(findings) >= 3:
-            return findings
+            return findings[:3]
     if findings:
-        return findings
+        return findings[:3]
 
     evaluation = bundle.get("evaluation") or {}
     for contributor in evaluation.get("top_contributors") or []:
@@ -348,6 +496,23 @@ def _recommend_revenue_comparisons(
             break
 
 
+def _recommend_lever_analysis(
+    recommendations: list[dict[str, str]],
+    tree_id: str,
+    period_args: list[str],
+) -> None:
+    """Add a deterministic lever-analysis follow-up command."""
+    _add_recommendation(
+        recommendations,
+        kind="levers",
+        title="Quantify lever impact",
+        why="Use elasticities to estimate how changes in key sub-metrics would move the root KPI.",
+        command=_agent_command(
+            ["qluent", "trees", "levers", tree_id, *period_args, "--json-output"]
+        ),
+    )
+
+
 def _build_recommended_next_steps(
     bundle: dict[str, Any],
     *,
@@ -375,6 +540,9 @@ def _build_recommended_next_steps(
     tree_label = str(bundle.get("tree_label") or tree_id).lower()
     segment_by_used = list(bundle.get("segment_by_used") or [])
     supported_dimensions = [str(value) for value in (validation.get("supported_dimensions") or [])]
+
+    if _is_lever_question(question):
+        _recommend_lever_analysis(recommendations, tree_id, period_args)
 
     if not validation or not validation.get("valid", True):
         _add_recommendation(
@@ -464,6 +632,7 @@ def _init_investigation_bundle(
             "evaluations": [],
         },
         "evaluation": None,
+        "levers": None,
         "root_cause": None,
         "comparison": {
             "period_label": period_label,
@@ -523,6 +692,11 @@ def _run_investigation_steps(
     try:
         evaluation = client.evaluate_tree(resolved_tree_id, c_from, c_to, p_from, p_to)
         bundle["evaluation"] = evaluation
+        bundle["levers"] = _build_lever_analysis(
+            evaluation,
+            top_n=3,
+            scenarios=_DEFAULT_LEVER_SCENARIOS,
+        )
         bundle["tree_label"] = evaluation.get("tree_label", resolved_tree_id)
     except Exception as exc:  # pragma: no cover - defensive integration handling
         bundle["step_errors"]["evaluation"] = format_step_error(exc)
@@ -655,6 +829,44 @@ def evaluate(
         click.echo(json.dumps(data, indent=2))
     else:
         click.echo(format_evaluation(data))
+
+
+@trees.command()
+@click.argument("tree_id")
+@click.option("--period", "-p", default=None, help='Period like "last week", "this month", "last 30 days"')
+@click.option("--current", "current_range", default=None, help="Current window as YYYY-MM-DD:YYYY-MM-DD")
+@click.option("--compare", "compare_range", default=None, help="Comparison window as YYYY-MM-DD:YYYY-MM-DD")
+@click.option("--top", default=5, type=click.IntRange(1, 20), help="Number of top levers to show")
+@click.option(
+    "--scenario",
+    "scenarios",
+    multiple=True,
+    type=click.FloatRange(0.0, 1.0),
+    default=_DEFAULT_LEVER_SCENARIOS,
+    help="Node change ratio to evaluate, expressed as a decimal (repeatable, e.g. 0.05 for +5%)",
+)
+@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+def levers(
+    tree_id: str,
+    period: str | None,
+    current_range: str | None,
+    compare_range: str | None,
+    top: int,
+    scenarios: tuple[float, ...],
+    as_json: bool,
+) -> None:
+    """Quantify top lever impacts from tree elasticities."""
+    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    client = QluentClient(load_config())
+    evaluation = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
+    data = _build_lever_analysis(evaluation, top_n=top, scenarios=scenarios)
+    if data is None:
+        raise click.ClickException("Could not compute lever analysis from the evaluation result.")
+
+    if as_json:
+        click.echo(json.dumps(data, indent=2))
+    else:
+        click.echo(format_levers(data))
 
 
 @trees.command()

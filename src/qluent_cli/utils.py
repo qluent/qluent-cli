@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import json
-
 import click
-import httpx
 
 
 def parse_filters(filter_args: tuple[str, ...]) -> dict[str, list[str]]:
@@ -27,33 +24,6 @@ def parse_filters(filter_args: tuple[str, ...]) -> dict[str, list[str]]:
             )
         filters.setdefault(cleaned_key, []).append(cleaned_value)
     return filters
-
-
-def format_step_error(exc: Exception) -> str:
-    """Format an exception from an investigation step into a human-readable string."""
-    if isinstance(exc, click.ClickException):
-        return exc.message
-
-    if isinstance(exc, httpx.HTTPStatusError):
-        response = exc.response
-        detail = ""
-        try:
-            payload = response.json()
-        except ValueError:
-            payload = None
-        if isinstance(payload, dict):
-            raw_detail = payload.get("error") or payload.get("detail") or payload.get("message")
-            if isinstance(raw_detail, dict):
-                detail = json.dumps(raw_detail, sort_keys=True)
-            elif raw_detail is not None:
-                detail = str(raw_detail)
-        if not detail:
-            detail = response.text.strip()
-        if detail:
-            return f"{response.status_code} {detail}"
-        return f"{response.status_code} {exc}"
-
-    return str(exc)
 
 
 def resolve_date_args(

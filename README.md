@@ -14,27 +14,23 @@ npm install -g @qluent/cli
 Or without a global install:
 
 ```bash
-npx @qluent/cli setup
+npx @qluent/cli login
 ```
 
-After install:
+After install, authenticate via browser-based SSO:
 
 ```bash
-qluent setup
+qluent login
 ```
 
-That walks the user through:
-- API key
-- project UUID
-- email
-- API URL
-- generating `CLAUDE.md`
+That opens your browser for SSO authentication and stores credentials locally.
 
-The default hosted environment is `https://api.app-development.qluent.com`.
+Alternatively, `qluent setup` provides an interactive flow where you paste your API key manually.
+
 For local backend development, run:
 
 ```bash
-qluent setup --local
+qluent login --local
 ```
 
 Hosted API URLs default to client-safe mode automatically. Localhost URLs default to full-access mode for development.
@@ -44,7 +40,7 @@ Hosted API URLs default to client-safe mode automatically. Localhost URLs defaul
 The easiest path is:
 
 ```bash
-qluent setup
+qluent login
 ```
 
 Or, if config is already present:
@@ -78,7 +74,7 @@ CLI repo root:
 
 ```bash
 uv build
-pipx install dist/qluent_cli-0.1.1-py3-none-any.whl
+pipx install dist/qluent_cli-*.whl
 ```
 
 ## Building Release Binaries

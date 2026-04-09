@@ -300,6 +300,8 @@ def test_format_evaluation_preserves_negative_values():
                     "current_value": -5.2,
                     "delta_value": -4.1,
                     "delta_ratio": 3.7272727,
+                    "sensitivity": 1.0,
+                    "elasticity": 1.0,
                 }
             ],
             "top_contributors": [],

@@ -33,6 +33,12 @@ def _fmt_share(share: float | None) -> str:
     return f"{share * 100:.0f}%"
 
 
+def _fmt_elasticity(elasticity: float | None) -> str:
+    if elasticity is None:
+        return "n/a"
+    return f"{elasticity:+.2f}"
+
+
 def _fmt_share_delta(share: float | None) -> str:
     if share is None:
         return "n/a"
@@ -197,15 +203,19 @@ def format_evaluation(data: dict[str, Any]) -> str:
     # Full node breakdown
     nodes = data.get("nodes", [])
     if nodes:
+        has_elasticity = any(n.get("elasticity") is not None for n in nodes)
         lines.append("  All nodes:")
         max_label = max(len(n["label"]) for n in nodes) if nodes else 0
         for n in nodes:
             label = n["label"].ljust(max_label)
-            lines.append(
+            line = (
                 f"    {label}  "
                 f"{_fmt_num(n['comparison_value']):>12} → {_fmt_num(n['current_value']):>12}  "
                 f"Δ {_fmt_num(n['delta_value'], signed=True):>12}  {_fmt_pct(n.get('delta_ratio')):>7}"
             )
+            if has_elasticity:
+                line += f"  ε {_fmt_elasticity(n.get('elasticity')):>6}"
+            lines.append(line)
 
     # Warnings
     warnings = data.get("warnings", [])

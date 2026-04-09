@@ -299,6 +299,8 @@ def test_trees_investigate_bundles_deterministic_steps(monkeypatch):
                     "delta_value": 10,
                     "delta_ratio": 0.1111111111,
                     "contributions": [],
+                    "sensitivity": 1.0,
+                    "elasticity": 1.0,
                 }
             ],
             "warnings": [],

@@ -12,6 +12,7 @@ qluent trees get <tree_id>                                  # Show tree hierarch
 qluent trees validate <tree_id>                             # Validate tree SQL contracts and dimensions
 qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
 qluent trees evaluate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD
+qluent trees levers <tree_id> --period "last week"          # Quantify elasticity / lever impact scenarios
 qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
 qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
@@ -62,7 +63,8 @@ Read the investigation bundle in this order:
 2. `agent.top_findings`
 3. `agent.gaps`
 4. `agent.recommended_next_steps`
-5. `root_cause`, `evaluation`, and `trend` details for evidence
+5. `levers` — embedded elasticity / lever summary when available
+6. `root_cause`, `evaluation`, and `trend` details for evidence
 
 Use these rules:
 
@@ -72,6 +74,10 @@ Use these rules:
 - If `agent.status = resolved`, summarize the evidence and stop unless the user explicitly wants a deeper drill-down.
 - Always report the exact current and comparison windows you used.
 - Treat `agent.top_findings` as the fastest summary, then verify against `root_cause.conclusion.takeaways` and supporting evidence.
+- For elasticity, sensitivity, leverage, impact, scenario, or "what if" follow-ups, read `investigate.levers` first. If you need a deeper scenario table, run `qluent trees levers` with the exact same `--current/--compare` windows.
+- Reuse the exact windows from the last investigation for follow-ups unless the user explicitly changes the period.
+- Never parse saved tool-result temp files or write ad-hoc Python to extract values from prior bash output. Use the structured JSON from `investigate`, `evaluate`, or `levers` directly.
+- Do not rerun both JSON and non-JSON versions of the same qluent command unless the JSON is genuinely insufficient.
 
 ## Manual root cause analysis workflow
 
@@ -91,21 +97,29 @@ qluent trees evaluate revenue --period "last week"
 The Shapley attribution tells you WHICH sub-metric drove the change and by how much.
 Focus on the top contributors — they explain where the delta came from.
 
-### Step 3: Validate segment contracts with `trees validate`
+### Step 3: Quantify future lever impact with `levers`
+```bash
+qluent trees levers revenue --period "last week" --json-output
+```
+Use this for explicit elasticity / impact questions. The output ranks the biggest
+levers by absolute elasticity and shows scenario impacts such as +1%, +5%, and +10%.
+Treat these as local linear estimates, not forecasts.
+
+### Step 4: Validate segment contracts with `trees validate`
 ```bash
 qluent trees validate revenue
 ```
 Use this before relying on segment RCA. A tree should explicitly project its execution columns
 and declared dimensions at every leaf node.
 
-### Step 4: Run deterministic root cause analysis with `rca analyze`
+### Step 5: Run deterministic root cause analysis with `rca analyze`
 ```bash
 qluent rca analyze revenue --period "last week"
 ```
 This traverses the tree and, when dimensions are available, cuts suspect nodes by segment
 to surface where the movement is concentrated.
 
-### Step 5: Cross-reference with `compare`
+### Step 6: Cross-reference with `compare`
 ```bash
 qluent trees compare revenue order_volume --period "last week"
 ```
@@ -146,6 +160,15 @@ Interpret them like this:
 - Warnings and unresolved branches reduce the score.
 - Use `evidence_types_present`, `evidence_types_missing`, and `confidence_factors` to explain why the score is high, medium, or low.
 - Never describe `80%` as "80% likely to be true." Describe it as an evidence or coverage score.
+
+### Lever / scenario interpretation
+`levers.top_levers[]` and `trees levers` quantify forward-looking impact from elasticities.
+
+- `recommended_direction = increase` means raising that node improves the root KPI.
+- `recommended_direction = decrease` means reducing that node improves the root KPI.
+- `estimated_root_delta_ratio` is the implied root percent change from the scenario.
+- `estimated_root_delta_value` is the implied absolute root change using the current-period root value.
+- These are local linear estimates from the current operating point, not forecasts or causal guarantees.
 
 ### Example analysis
 "Why did revenue change last week?"

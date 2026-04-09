@@ -74,6 +74,11 @@ def build_pyinstaller_args(
     dist_dir: Path,
     spec_dir: Path,
 ) -> list[str]:
+    from qluent_cli.main import INSTRUCTIONS_FILENAME
+
+    instructions_file = entrypoint.parent / INSTRUCTIONS_FILENAME
+    if not instructions_file.exists():
+        raise FileNotFoundError(f"Required data file not found: {instructions_file}")
     return [
         sys.executable,
         "-m",
@@ -85,6 +90,8 @@ def build_pyinstaller_args(
         "qluent",
         "--paths",
         str(entrypoint.parent.parent),
+        "--add-data",
+        f"{instructions_file}{os.pathsep}.",
         "--distpath",
         str(dist_dir),
         "--workpath",

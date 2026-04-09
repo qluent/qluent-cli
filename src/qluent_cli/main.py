@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import click
@@ -251,11 +252,12 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
 cli.add_command(trees)
 cli.add_command(rca)
 
-_INSTRUCTIONS_FILE = Path(__file__).with_name("claude_instructions.md")
+INSTRUCTIONS_FILENAME = "claude_instructions.md"
 
 
 def _load_claude_instructions() -> str:
-    return _INSTRUCTIONS_FILE.read_text()
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return (base / INSTRUCTIONS_FILENAME).read_text()
 
 
 @cli.command()

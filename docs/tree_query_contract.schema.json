@@ -1,0 +1,149 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qluent.com/schemas/tree-query-contract.v1.json",
+  "title": "Qluent Deterministic Tree Query Contract",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "contract_kind",
+    "deterministic",
+    "agent_interpretation",
+    "project_context",
+    "tree",
+    "root_metric",
+    "grain",
+    "windows",
+    "metric_values",
+    "warnings",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": { "const": "qluent.tree_query.v1" },
+    "contract_kind": { "const": "deterministic_tree_query" },
+    "deterministic": { "const": true },
+    "agent_interpretation": {
+      "description": "Reserved for agent-authored prose or hypotheses. Deterministic query responses must keep this null.",
+      "type": "null"
+    },
+    "project_context": {
+      "type": "object",
+      "required": ["project_uuid", "user_email", "api_url", "client_safe"],
+      "properties": {
+        "project_uuid": { "type": "string" },
+        "user_email": { "type": "string" },
+        "api_url": { "type": "string" },
+        "client_safe": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "tree": {
+      "type": "object",
+      "required": ["id", "label", "root_node_id"],
+      "properties": {
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "root_node_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "root_metric": {
+      "type": "object",
+      "required": ["id", "label", "unit"],
+      "properties": {
+        "id": { "type": ["string", "null"] },
+        "label": { "type": "string" },
+        "unit": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "grain": { "type": "string" },
+    "dimensions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "filters": { "type": "object" },
+    "windows": {
+      "type": "object",
+      "required": ["current", "comparison", "current_day_count", "comparison_day_count"],
+      "properties": {
+        "current": { "$ref": "#/$defs/window" },
+        "comparison": { "$ref": "#/$defs/window" },
+        "current_day_count": { "type": ["integer", "null"], "minimum": 1 },
+        "comparison_day_count": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "metric_values": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["node_id", "label", "current", "comparison", "delta"],
+        "properties": {
+          "node_id": { "type": ["string", "null"] },
+          "label": { "type": "string" },
+          "kind": { "type": ["string", "null"] },
+          "current": { "$ref": "#/$defs/metric_value" },
+          "comparison": { "$ref": "#/$defs/metric_value" },
+          "delta": {
+            "type": "object",
+            "required": ["value", "ratio", "unit", "grain", "current_window", "comparison_window", "provenance"],
+            "properties": {
+              "value": { "type": ["number", "null"] },
+              "ratio": { "type": ["number", "null"] },
+              "unit": { "type": "string" },
+              "grain": { "type": "string" },
+              "current_window": { "$ref": "#/$defs/window" },
+              "comparison_window": { "$ref": "#/$defs/window" },
+              "provenance": { "$ref": "#/$defs/provenance" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "child_decomposition": { "type": "array" },
+    "dimension_breakdowns": { "type": "array" },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "provenance": { "$ref": "#/$defs/provenance" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "window": {
+      "type": ["object", "null"],
+      "required": ["date_from", "date_to"],
+      "properties": {
+        "date_from": { "type": "string", "format": "date" },
+        "date_to": { "type": "string", "format": "date" }
+      },
+      "additionalProperties": true
+    },
+    "metric_value": {
+      "type": "object",
+      "required": ["value", "unit", "grain", "window", "provenance"],
+      "properties": {
+        "value": { "type": ["number", "null"] },
+        "unit": { "type": "string" },
+        "grain": { "type": "string" },
+        "window": { "$ref": "#/$defs/window" },
+        "provenance": { "$ref": "#/$defs/provenance" }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source", "project_uuid", "tree_id"],
+      "properties": {
+        "source": { "type": "string" },
+        "project_uuid": { "type": "string" },
+        "tree_id": { "type": "string" },
+        "node_id": { "type": ["string", "null"] },
+        "metric_id": {}
+      },
+      "additionalProperties": true
+    }
+  }
+}

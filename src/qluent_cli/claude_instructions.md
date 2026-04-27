@@ -11,7 +11,9 @@ qluent trees get <tree_id>                                  # Show tree hierarch
 qluent trees validate <tree_id>                             # Validate tree SQL contracts and dimensions
 qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
 qluent trees evaluate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD
+qluent trees evaluate <tree_id> --period "last week" --contract-output  # Stable deterministic query contract
 qluent trees levers <tree_id> --period "last week"          # Quantify elasticity / lever impact scenarios
+qluent elasticity <tree_id> --outcome <metric> --lever <metric> --period "last week"  # Evidence-labeled elasticity
 qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
 qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
@@ -78,7 +80,7 @@ Use these rules:
 - If `agent.status = resolved`, summarize the evidence and stop unless the user explicitly wants a deeper drill-down.
 - Always report the exact current and comparison windows you used.
 - Treat `agent.top_findings` as the fastest summary, then verify against `root_cause.conclusion.takeaways` and supporting evidence.
-- For elasticity, sensitivity, leverage, impact, scenario, or "what if" follow-ups, read `investigate.levers` first. If you need a deeper scenario table, run `qluent trees levers` with the exact same `--current/--compare` windows.
+- For elasticity, sensitivity, leverage, impact, scenario, or "what if" follow-ups, read `investigate.levers` first. If the user asks for a selected outcome/lever relationship, run `qluent elasticity` and preserve its evidence type and confidence caveats. If you need a deeper scenario table, run `qluent trees levers` with the exact same `--current/--compare` windows.
 - Reuse the exact windows from the last investigation for follow-ups unless the user explicitly changes the period.
 - Never parse saved tool-result temp files or write ad-hoc Python to extract values from prior bash output. Use the structured JSON from `investigate`, `evaluate`, or `levers` directly.
 - Do not rerun both JSON and non-JSON versions of the same qluent command unless the JSON is genuinely insufficient.

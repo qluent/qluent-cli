@@ -270,6 +270,76 @@ def test_trees_levers_outputs_ranked_scenarios(monkeypatch):
     assert "local linear estimates" in payload["warnings"][-1]
 
 
+def test_trees_evaluate_contract_output_includes_value_metadata(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_evaluate_tree(self, tree_id, current_from, current_to, comparison_from, comparison_to):
+        return {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "root_node_id": "revenue",
+            "unit": "USD",
+            "grain": "day",
+            "current_window": {"date_from": current_from, "date_to": current_to},
+            "comparison_window": {"date_from": comparison_from, "date_to": comparison_to},
+            "current_value": 120,
+            "comparison_value": 100,
+            "delta_value": 20,
+            "delta_ratio": 0.2,
+            "top_contributors": [{"node_id": "orders", "delta_value": 20}],
+            "nodes": [
+                {
+                    "id": "revenue",
+                    "label": "Revenue",
+                    "kind": "formula",
+                    "unit": "USD",
+                    "grain": "day",
+                    "current_value": 120,
+                    "comparison_value": 100,
+                    "delta_value": 20,
+                    "delta_ratio": 0.2,
+                }
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.evaluate_tree", mock_evaluate_tree)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "evaluate",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--contract-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["schema_version"] == "qluent.tree_query.v1"
+    assert payload["deterministic"] is True
+    assert payload["agent_interpretation"] is None
+    assert payload["windows"]["current_day_count"] == 7
+    metric_value = payload["metric_values"][0]
+    assert metric_value["current"]["unit"] == "USD"
+    assert metric_value["current"]["grain"] == "day"
+    assert metric_value["current"]["provenance"]["source"] == "metric_tree_evaluate"
+    assert metric_value["delta"]["current_window"]["date_from"] == "2026-03-09"
+
+
 def test_trees_levers_formats_human_output(monkeypatch):
     monkeypatch.setattr(
         "qluent_cli.trees.load_config",

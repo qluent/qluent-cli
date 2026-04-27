@@ -28,6 +28,7 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
         *,
         segment_by,
         filters,
+        metric,
         max_depth,
         max_branching,
         max_segments,
@@ -38,6 +39,7 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
         assert comparison_from == "2026-03-02"
         assert segment_by == ["channel"]
         assert filters == {"country": ["SE"]}
+        assert metric is None
         assert max_depth == 2
         assert max_branching == 1
         assert max_segments == 3
@@ -264,6 +266,104 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
     assert "mechanism: Orders effect +200, AOV effect -250, Interaction effect -50" in result.output
     assert "best segment cut: channel -> Organic -200 (200%)" in result.output
     assert "Evidence factors:" in result.output
+
+
+def test_rca_json_output_enriches_materiality_and_provenance(monkeypatch):
+    import json
+
+    monkeypatch.setattr(
+        "qluent_cli.rca.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_root_cause_tree(
+        self,
+        tree_id,
+        current_from,
+        current_to,
+        comparison_from,
+        comparison_to,
+        *,
+        segment_by,
+        filters,
+        metric,
+        max_depth,
+        max_branching,
+        max_segments,
+        min_contribution_share,
+    ):
+        assert metric == "net_revenue"
+        return {
+            "tree_label": "Revenue",
+            "tree_id": tree_id,
+            "root_node_id": "revenue",
+            "current_window": {"date_from": current_from, "date_to": current_to},
+            "comparison_window": {"date_from": comparison_from, "date_to": comparison_to},
+            "current_value": 140,
+            "comparison_value": 70,
+            "delta_value": 70,
+            "delta_ratio": 1.0,
+            "findings": [
+                {
+                    "node_id": "orders",
+                    "label": "Orders",
+                    "depth": 1,
+                    "path": ["revenue", "orders"],
+                    "current_value": 100,
+                    "comparison_value": 80,
+                    "delta_value": 20,
+                    "delta_ratio": 0.25,
+                    "contribution_value": 35,
+                    "contribution_share": 0.5,
+                    "segment_findings": [
+                        {
+                            "dimension": "region",
+                            "segment": "SE",
+                            "current_value": 60,
+                            "comparison_value": 40,
+                            "delta_value": 20,
+                            "share_of_change": 0.2857142857,
+                        }
+                    ],
+                }
+            ],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr("qluent_cli.rca.QluentClient.root_cause_tree", mock_root_cause_tree)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "rca",
+            "analyze",
+            "revenue",
+            "--metric",
+            "net_revenue",
+            "--current",
+            "2026-03-01:2026-03-07",
+            "--compare",
+            "2026-02-01:2026-02-14",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["schema_version"] == "qluent.rca.v1"
+    assert payload["contract_kind"] == "deterministic_rca"
+    assert payload["window_metadata"]["normalized_delta_included"] is True
+    assert payload["normalized_delta_value"] == 15
+    finding = payload["findings"][0]
+    assert finding["share_of_parent_delta"] == 0.5
+    assert finding["share_of_root_delta"] == 0.5
+    assert finding["provenance"]["source"] == "metric_tree_root_cause"
+    assert finding["segment_findings"][0]["share_of_root_delta"] == 0.2857142857
 
 
 def test_rca_analyze_rejects_invalid_filter(monkeypatch):

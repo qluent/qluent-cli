@@ -8,6 +8,7 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
+from qluent_cli.contracts import enrich_rca_output
 from qluent_cli.formatters import format_root_cause
 from qluent_cli.utils import parse_filters, resolve_date_args
 
@@ -19,6 +20,7 @@ def rca() -> None:
 
 @rca.command()
 @click.argument("tree_id")
+@click.option("--metric", default=None, help="Metric node to start the RCA from (defaults to the tree root)")
 @click.option("--period", "-p", default=None, help='Period like "last week" or "this month"')
 @click.option("--current", "current_range", default=None, help="Current window as YYYY-MM-DD:YYYY-MM-DD")
 @click.option("--compare", "compare_range", default=None, help="Comparison window as YYYY-MM-DD:YYYY-MM-DD")
@@ -36,6 +38,7 @@ def rca() -> None:
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
 def analyze(
     tree_id: str,
+    metric: str | None,
     period: str | None,
     current_range: str | None,
     compare_range: str | None,
@@ -51,7 +54,8 @@ def analyze(
     c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
     parsed_filters = parse_filters(filters)
 
-    client = QluentClient(load_config())
+    config = load_config()
+    client = QluentClient(config)
     data = client.root_cause_tree(
         tree_id,
         c_from,
@@ -60,11 +64,13 @@ def analyze(
         p_to,
         segment_by=list(segment_by),
         filters=parsed_filters,
+        metric=metric,
         max_depth=max_depth,
         max_branching=max_branches,
         max_segments=max_segments,
         min_contribution_share=min_contribution_share,
     )
+    data = enrich_rca_output(data, config)
 
     if as_json:
         click.echo(json.dumps(data, indent=2))

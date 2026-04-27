@@ -105,18 +105,6 @@ class QluentClient:
         resp.raise_for_status()
         return resp.json()
 
-    def match_tree(self, question: str) -> dict[str, Any]:
-        """Match a natural-language question to the best metric tree (server-side)."""
-        resp = self._client.post(
-            f"{self._base}/metric-trees/match/",
-            json={
-                "user_email": self._config.user_email,
-                "question": question,
-            },
-        )
-        resp.raise_for_status()
-        return resp.json()
-
     def investigate_tree(
         self,
         tree_id: str,
@@ -125,7 +113,6 @@ class QluentClient:
         comparison_from: str,
         comparison_to: str,
         *,
-        question: str | None = None,
         trend_periods: int = 4,
         trend_grain: str = "week",
         trend_as_of: str | None = None,
@@ -145,7 +132,6 @@ class QluentClient:
             max_segments=max_segments, min_contribution_share=min_contribution_share,
         )
         body.update({
-            "question": question,
             "trend_periods": trend_periods,
             "trend_grain": trend_grain,
             "trend_as_of": trend_as_of,

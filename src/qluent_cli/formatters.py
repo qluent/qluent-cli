@@ -87,55 +87,6 @@ def format_tree_list(data: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip()
 
 
-def format_tree_match(data: dict[str, Any]) -> str:
-    """Format natural-language tree matching output."""
-    current_window = data["current_window"]
-    comparison_window = data["comparison_window"]
-    lines = [f'Question: "{data["question"]}"', ""]
-
-    if data.get("matched"):
-        lines.append(
-            f"Matched tree: {data['tree_id']} ({data.get('tree_label') or data['tree_id']})"
-        )
-        lines.append(f"  Score: {data.get('score', 0)}")
-        reasons = data.get("reasons") or []
-        if reasons:
-            lines.append("  Reasons:")
-            for reason in reasons:
-                lines.append(f"    - {reason}")
-    else:
-        decision = data.get("decision") or "no_match"
-        if decision == "ambiguous":
-            lines.append("No unambiguous tree match.")
-        elif decision == "no_trees":
-            lines.append("No metric trees are configured.")
-        else:
-            lines.append("No tree match found.")
-
-    lines.append("")
-    lines.append(
-        "Inferred window: "
-        + format_period_label(
-            current_window["date_from"],
-            current_window["date_to"],
-            comparison_window["date_from"],
-            comparison_window["date_to"],
-        )
-    )
-
-    top_candidates = data.get("top_candidates") or []
-    if top_candidates:
-        lines.append("")
-        lines.append("Top candidates:")
-        for candidate in top_candidates:
-            label = candidate.get("tree_label") or candidate.get("tree_id")
-            lines.append(
-                f"  {candidate.get('tree_id')} ({label}) — score {candidate.get('score', 0)}"
-            )
-
-    return "\n".join(lines)
-
-
 def format_tree_detail(data: dict[str, Any]) -> str:
     """Format a single tree as an indented hierarchy."""
     nodes_by_id = {n["id"]: n for n in data.get("nodes", [])}
@@ -690,7 +641,6 @@ def _fmt_investigation_header(data: dict[str, Any], lines: list[str]) -> str:
     evaluation = data.get("evaluation") or {}
     validation = data.get("validation") or {}
     root_cause = data.get("root_cause") or {}
-    match_result = data.get("match") or {}
     agent = data.get("agent") or {}
     tree_label = (
         evaluation.get("tree_label")
@@ -701,21 +651,6 @@ def _fmt_investigation_header(data: dict[str, Any], lines: list[str]) -> str:
     )
 
     lines.extend([f"{tree_label} Investigation", ""])
-    if data.get("question"):
-        lines.append(f'  Question: "{data["question"]}"')
-    if match_result:
-        if match_result.get("matched"):
-            lines.append(
-                "  Matched tree: "
-                + str(match_result.get("tree_id") or match_result.get("tree_label") or "?")
-            )
-        else:
-            decision = match_result.get("decision") or "no_match"
-            status_label = {
-                "ambiguous": "ambiguous match",
-                "no_trees": "no saved trees",
-            }.get(decision, "no tree match")
-            lines.append(f"  Match status: {status_label}")
     if data.get("period_label"):
         lines.append(f"  Period: {data['period_label']}")
     if data.get("segment_by_used"):

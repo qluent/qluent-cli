@@ -150,112 +150,6 @@ def test_trees_validate_formats_redacted_contract_diagnostics(monkeypatch):
     assert "missing dimensions: country" in result.output
 
 
-def test_trees_match_delegates_to_server(monkeypatch):
-    monkeypatch.setattr(
-        "qluent_cli.trees.load_config",
-        lambda: QluentConfig(
-            api_key="qk_test",
-            api_url="https://api.example.com",
-            project_uuid="project-123",
-            user_email="user@example.com",
-        ),
-    )
-
-    def mock_match_tree(self, question):
-        return {
-            "question": question,
-            "decision": "matched",
-            "matched": True,
-            "tree_id": "revenue",
-            "tree_label": "Revenue",
-            "score": 12,
-            "reasons": ["exact id phrase 'revenue'"],
-            "current_window": {
-                "date_from": "2026-03-09",
-                "date_to": "2026-03-15",
-            },
-            "comparison_window": {
-                "date_from": "2026-03-02",
-                "date_to": "2026-03-08",
-            },
-            "top_candidates": [
-                {"tree_id": "revenue", "score": 12, "reasons": []},
-            ],
-        }
-
-    monkeypatch.setattr("qluent_cli.trees.QluentClient.match_tree", mock_match_tree)
-
-    result = CliRunner().invoke(
-        cli,
-        [
-            "trees",
-            "match",
-            "Why did revenue drop from 2026-03-09 to 2026-03-15 compared with 2026-03-02 to 2026-03-08?",
-            "--json-output",
-        ],
-    )
-
-    assert result.exit_code == 0
-    payload = json.loads(result.output)
-    assert payload["matched"] is True
-    assert payload["decision"] == "matched"
-    assert payload["tree_id"] == "revenue"
-    assert payload["current_window"] == {
-        "date_from": "2026-03-09",
-        "date_to": "2026-03-15",
-    }
-
-
-def test_trees_match_reports_ambiguous_candidates(monkeypatch):
-    monkeypatch.setattr(
-        "qluent_cli.trees.load_config",
-        lambda: QluentConfig(
-            api_key="qk_test",
-            api_url="https://api.example.com",
-            project_uuid="project-123",
-            user_email="user@example.com",
-        ),
-    )
-
-    def mock_match_tree(self, question):
-        return {
-            "question": question,
-            "decision": "ambiguous",
-            "matched": False,
-            "tree_id": None,
-            "tree_label": None,
-            "score": 0,
-            "reasons": [],
-            "current_window": {"date_from": "2026-03-30", "date_to": "2026-04-05"},
-            "comparison_window": {"date_from": "2026-03-23", "date_to": "2026-03-29"},
-            "top_candidates": [
-                {"tree_id": "orders", "score": 4, "reasons": []},
-                {"tree_id": "revenue", "score": 4, "reasons": []},
-            ],
-        }
-
-    monkeypatch.setattr("qluent_cli.trees.QluentClient.match_tree", mock_match_tree)
-
-    result = CliRunner().invoke(
-        cli,
-        [
-            "trees",
-            "match",
-            "Compare revenue and orders",
-            "--json-output",
-        ],
-    )
-
-    assert result.exit_code == 0
-    payload = json.loads(result.output)
-    assert payload["matched"] is False
-    assert payload["decision"] == "ambiguous"
-    assert [candidate["tree_id"] for candidate in payload["top_candidates"][:2]] == [
-        "orders",
-        "revenue",
-    ]
-
-
 def test_trees_levers_outputs_ranked_scenarios(monkeypatch):
     monkeypatch.setattr(
         "qluent_cli.trees.load_config",
@@ -529,67 +423,15 @@ def test_trees_investigate_delegates_to_server(monkeypatch):
     assert investigate_calls[0]["filters"] == {"country": ["SE"]}
 
 
-def test_trees_investigate_matches_question_via_server(monkeypatch):
-    monkeypatch.setattr(
-        "qluent_cli.trees.load_config",
-        lambda: QluentConfig(
-            api_key="qk_test",
-            api_url="https://api.example.com",
-            project_uuid="project-123",
-            user_email="user@example.com",
-        ),
-    )
+def test_trees_investigate_requires_tree_id():
+    result = CliRunner().invoke(cli, ["trees", "investigate"])
 
-    def mock_match_tree(self, question):
-        return {
-            "question": question,
-            "decision": "matched",
-            "matched": True,
-            "tree_id": "revenue",
-            "tree_label": "Revenue",
-            "score": 12,
-            "reasons": [],
-            "current_window": {"date_from": "2026-03-09", "date_to": "2026-03-15"},
-            "comparison_window": {"date_from": "2026-03-02", "date_to": "2026-03-08"},
-            "top_candidates": [],
-        }
+    assert result.exit_code != 0
+    assert "TREE_ID" in result.output or "tree_id" in result.output.lower()
 
-    def mock_investigate_tree(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
-        return {
-            "question": kwargs.get("question"),
-            "match": {"matched": True, "tree_id": "revenue"},
-            "tree_id": tree_id,
-            "tree_label": "Revenue",
-            "current_window": {"date_from": c_from, "date_to": c_to},
-            "comparison_window": {"date_from": p_from, "date_to": p_to},
-            "agent": {
-                "status": "resolved",
-                "top_findings": ["Orders explain most of the revenue decline."],
-                "gaps": [],
-                "recommended_next_steps": [],
-            },
-        }
 
-    monkeypatch.setattr("qluent_cli.trees.QluentClient.match_tree", mock_match_tree)
-    monkeypatch.setattr(
-        "qluent_cli.trees.QluentClient.investigate_tree", mock_investigate_tree
-    )
+def test_trees_match_subcommand_removed():
+    result = CliRunner().invoke(cli, ["trees", "match", "any question"])
 
-    result = CliRunner().invoke(
-        cli,
-        [
-            "trees",
-            "investigate",
-            "--question",
-            "Why did revenue drop from 2026-03-09 to 2026-03-15 compared with 2026-03-02 to 2026-03-08?",
-            "--json-output",
-        ],
-    )
-
-    assert result.exit_code == 0
-    payload = json.loads(result.output)
-    assert payload["tree_id"] == "revenue"
-    assert payload["agent"]["status"] == "resolved"
-    assert payload["agent"]["top_findings"] == [
-        "Orders explain most of the revenue decline."
-    ]
+    assert result.exit_code != 0
+    assert "no such command" in result.output.lower()

@@ -55,17 +55,17 @@ That writes `CLAUDE.md` in the current directory so Claude Code can use the CLI 
 
 ```bash
 qluent trees list
-qluent trees match "Why did revenue drop last week?"
-qluent trees investigate --question "Why did revenue drop last week?" --json-output
 qluent trees trend revenue --periods 4 --grain week
-qluent trees investigate revenue --period "last week"
+qluent trees investigate revenue --period "last week" --json-output
 qluent rca analyze revenue --period "last week"
 ```
 
-For Claude Code, prefer `qluent trees investigate --question ... --json-output`.
-That returns a bundled investigation plus `agent.status`, `agent.top_findings`,
-`agent.gaps`, and `agent.recommended_next_steps` so the model can continue RCA
-without manually inventing the next command.
+For Claude Code, the recommended flow is `qluent trees list --json-output` to
+discover available trees, then `qluent trees investigate <tree_id> --period
+"<period>" --json-output` for the chosen tree. The bundled response includes
+`agent.status`, `agent.top_findings`, `agent.gaps`, and
+`agent.recommended_next_steps` so the model can continue RCA without manually
+inventing the next command.
 
 ## Internal / Direct Python Install
 

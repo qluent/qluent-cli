@@ -1,4 +1,4 @@
-"""Metric tree commands — list, match, evaluate, trend, compare, investigate."""
+"""Metric tree commands — list, evaluate, trend, compare, investigate."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from qluent_cli.formatters import (
     format_trend,
     format_tree_detail,
     format_tree_list,
-    format_tree_match,
     format_tree_validation,
 )
 from qluent_cli.utils import parse_filters, resolve_date_args
@@ -212,20 +211,6 @@ def list_trees(as_json: bool) -> None:
 
 
 @trees.command()
-@click.argument("question")
-@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
-def match(question: str, as_json: bool) -> None:
-    """Match a natural-language question to the best saved metric tree."""
-    client = QluentClient(load_config())
-    result = client.match_tree(question)
-
-    if as_json:
-        click.echo(json.dumps(result, indent=2))
-    else:
-        click.echo(format_tree_match(result))
-
-
-@trees.command()
 @click.argument("tree_id")
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
 def get(tree_id: str, as_json: bool) -> None:
@@ -362,12 +347,7 @@ def compare(
 
 
 @trees.command()
-@click.argument("tree_id", required=False)
-@click.option(
-    "--question",
-    default=None,
-    help="Natural-language investigation prompt. The server will match the best tree and infer windows unless you override them.",
-)
+@click.argument("tree_id")
 @click.option("--period", "-p", default=None, help='Period like "last week" or "this month"')
 @click.option("--current", "current_range", default=None, help="Current window as YYYY-MM-DD:YYYY-MM-DD")
 @click.option("--compare", "compare_range", default=None, help="Comparison window as YYYY-MM-DD:YYYY-MM-DD")
@@ -388,8 +368,7 @@ def compare(
 )
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
 def investigate(
-    tree_id: str | None,
-    question: str | None,
+    tree_id: str,
     period: str | None,
     current_range: str | None,
     compare_range: str | None,
@@ -405,48 +384,17 @@ def investigate(
     min_contribution_share: float,
     as_json: bool,
 ) -> None:
-    """Run a deterministic multi-step investigation bundle for one tree or question."""
-    if bool(tree_id) == bool(question):
-        raise click.UsageError("Provide either TREE_ID or --question.")
-
+    """Run a deterministic multi-step investigation bundle for a tree."""
     client = QluentClient(load_config())
     parsed_filters = parse_filters(filters)
-
-    # When using --question, resolve the tree via server-side matching first
-    if question and not tree_id:
-        match_result = client.match_tree(question)
-        if match_result.get("matched") and match_result.get("tree_id"):
-            tree_id = str(match_result["tree_id"])
-        else:
-            # Return the match result as-is so the caller can see candidates
-            bundle = {
-                "question": question,
-                "match": match_result,
-                "tree_id": None,
-                "agent": {
-                    "status": "needs_tree_selection",
-                    "top_findings": [],
-                    "gaps": ["No unambiguous tree match. See match.top_candidates."],
-                    "recommended_next_steps": [],
-                },
-            }
-            if as_json:
-                click.echo(json.dumps(bundle, indent=2))
-            else:
-                click.echo(format_investigation(bundle))
-            return
-
-    assert tree_id is not None
     c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
 
-    # Delegate full investigation to server
     bundle = client.investigate_tree(
         tree_id,
         c_from,
         c_to,
         p_from,
         p_to,
-        question=question,
         trend_periods=trend_periods,
         trend_grain=trend_grain,
         trend_as_of=trend_as_of,

@@ -6,8 +6,7 @@ questions about business performance, revenue drivers, cost breakdowns, and tren
 ## Commands
 
 ```bash
-qluent trees list                                           # List available metric trees
-qluent trees match "Why did revenue drop last week?"        # Match a question to the best tree + infer windows
+qluent trees list                                           # List available metric trees (start here for any natural-language question)
 qluent trees get <tree_id>                                  # Show tree hierarchy
 qluent trees validate <tree_id>                             # Validate tree SQL contracts and dimensions
 qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
@@ -16,8 +15,7 @@ qluent trees levers <tree_id> --period "last week"          # Quantify elasticit
 qluent trees trend <tree_id> --periods 4 --grain week       # Multi-period trend analysis
 qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
-qluent trees investigate revenue --period "last week"       # Validate + trend + evaluate + RCA bundle
-qluent trees investigate --question "Why did revenue drop last week?"  # Match tree + infer windows + bundle RCA
+qluent trees investigate <tree_id> --period "last week"     # Validate + trend + evaluate + RCA bundle
 qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
 ```
 
@@ -30,21 +28,23 @@ Supported periods: "last week", "this week", "last month", "this month", "last q
 
 ## Preferred Claude Code workflow
 
-**IMPORTANT: Always start with `investigate`.** Do NOT manually chain `trend`, `evaluate`,
-`list`, or `rca analyze` commands. The `investigate` command bundles all of these into a
-single call and returns a structured response. Running individual commands is slower,
-more error-prone, and misses the agent-level analysis.
+**Pick a tree, then `investigate`.** The qluent server is deterministic and does
+not match natural-language questions to trees — Claude must select the tree
+client-side and pass it as an explicit positional argument.
 
-Your first command for ANY question about metrics, KPIs, revenue, sales, costs, or
-business performance should be:
+If the user already named the tree (e.g. "investigate revenue last week"), run:
 
 ```bash
-qluent trees investigate --question "<user's question>" --json-output
+qluent trees investigate <tree_id> --period "<period>" --json-output
 ```
 
-If the user already named the tree, use:
+If the user asked a natural-language question without naming a tree, list the
+available trees first and pick the best fit by matching the question against
+each tree's `id`, `label`, `description`, child node labels, and declared
+`dimensions`:
 
 ```bash
+qluent trees list --json-output
 qluent trees investigate <tree_id> --period "<period>" --json-output
 ```
 
@@ -53,6 +53,11 @@ For explicit date ranges:
 ```bash
 qluent trees investigate <tree_id> --current YYYY-MM-DD:YYYY-MM-DD --compare YYYY-MM-DD:YYYY-MM-DD --json-output
 ```
+
+Once you have the bundled response, use it to drive follow-ups: do NOT manually
+chain `trend`, `evaluate`, or `rca analyze` unless `agent.recommended_next_steps`
+calls for it. Running individual commands first is slower, more error-prone,
+and misses the agent-level analysis.
 
 Only use individual commands (`trend`, `evaluate`, `rca analyze`) as follow-up steps
 when `investigate` returns `agent.recommended_next_steps` that call for them.
@@ -69,7 +74,6 @@ Read the investigation bundle in this order:
 Use these rules:
 
 - Prefer `--json-output` when Claude Code is driving the workflow.
-- If `agent.status = needs_tree_selection`, inspect `match.top_candidates` and either pick the strongest tree or ask the user.
 - If `agent.status = needs_more_data` or `partially_resolved`, run the first relevant command from `agent.recommended_next_steps` before inventing your own drill-down.
 - If `agent.status = resolved`, summarize the evidence and stop unless the user explicitly wants a deeper drill-down.
 - Always report the exact current and comparison windows you used.

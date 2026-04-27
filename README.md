@@ -58,6 +58,7 @@ qluent trees list
 qluent trees trend revenue --periods 4 --grain week
 qluent trees investigate revenue --period "last week" --json-output
 qluent rca analyze revenue --period "last week"
+qluent elasticity revenue --outcome net_revenue --lever voucher_cost --dimension region --period "last week" --json-output
 ```
 
 For Claude Code, the recommended flow is `qluent trees list --json-output` to
@@ -66,6 +67,11 @@ discover available trees, then `qluent trees investigate <tree_id> --period
 `agent.status`, `agent.top_findings`, `agent.gaps`, and
 `agent.recommended_next_steps` so the model can continue RCA without manually
 inventing the next command.
+
+For deterministic agent workflows, `qluent trees evaluate <tree_id> --contract-output`
+emits the documented JSON contract in `docs/tree_query_contract.schema.json`. The
+contract separates returned metric facts from agent interpretation and attaches
+unit, grain, window, and provenance metadata to every metric value.
 
 ## Internal / Direct Python Install
 

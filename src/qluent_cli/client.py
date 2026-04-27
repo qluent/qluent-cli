@@ -50,6 +50,7 @@ class QluentClient:
         *,
         segment_by: list[str] | None = None,
         filters: dict[str, list[str]] | None = None,
+        metric: str | None = None,
         max_depth: int = 3,
         max_branching: int = 2,
         max_segments: int = 5,
@@ -59,11 +60,14 @@ class QluentClient:
         body.update({
             "segment_by": segment_by or [],
             "filters": filters or {},
+            "metric": metric,
             "max_depth": max_depth,
             "max_branching": max_branching,
             "max_segments": max_segments,
             "min_contribution_share": min_contribution_share,
         })
+        if metric is None:
+            body.pop("metric")
         return body
 
     def list_trees(self) -> dict[str, Any]:
@@ -118,6 +122,7 @@ class QluentClient:
         trend_as_of: str | None = None,
         segment_by: list[str] | None = None,
         filters: dict[str, list[str]] | None = None,
+        metric: str | None = None,
         compare_trees: list[str] | None = None,
         max_depth: int = 3,
         max_branching: int = 2,
@@ -127,7 +132,7 @@ class QluentClient:
         """Run a full server-side investigation bundle."""
         body = self._rca_body(
             current_from, current_to, comparison_from, comparison_to,
-            segment_by=segment_by, filters=filters,
+            segment_by=segment_by, filters=filters, metric=metric,
             max_depth=max_depth, max_branching=max_branching,
             max_segments=max_segments, min_contribution_share=min_contribution_share,
         )
@@ -155,6 +160,7 @@ class QluentClient:
         *,
         segment_by: list[str] | None = None,
         filters: dict[str, list[str]] | None = None,
+        metric: str | None = None,
         max_depth: int = 3,
         max_branching: int = 2,
         max_segments: int = 5,
@@ -164,10 +170,39 @@ class QluentClient:
             f"{self._base}/metric-trees/{tree_id}/root-cause/",
             json=self._rca_body(
                 current_from, current_to, comparison_from, comparison_to,
-                segment_by=segment_by, filters=filters,
+                segment_by=segment_by, filters=filters, metric=metric,
                 max_depth=max_depth, max_branching=max_branching,
                 max_segments=max_segments, min_contribution_share=min_contribution_share,
             ),
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def elasticity_tree(
+        self,
+        tree_id: str,
+        current_from: str,
+        current_to: str,
+        comparison_from: str,
+        comparison_to: str,
+        *,
+        outcome: str,
+        lever: str,
+        dimension: str | None = None,
+        filters: dict[str, list[str]] | None = None,
+    ) -> dict[str, Any]:
+        body = self._window_body(current_from, current_to, comparison_from, comparison_to)
+        body.update({
+            "outcome": outcome,
+            "lever": lever,
+            "dimension": dimension,
+            "filters": filters or {},
+        })
+        if dimension is None:
+            body.pop("dimension")
+        resp = self._client.post(
+            f"{self._base}/metric-trees/{tree_id}/elasticity/",
+            json=body,
         )
         resp.raise_for_status()
         return resp.json()

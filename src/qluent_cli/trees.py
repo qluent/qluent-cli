@@ -10,6 +10,7 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
+from qluent_cli.contracts import build_tree_query_contract
 from qluent_cli.formatters import (
     format_comparison,
     format_evaluation,
@@ -244,19 +245,24 @@ def validate(tree_id: str, as_json: bool) -> None:
 @click.option("--current", "current_range", default=None, help="Current window as YYYY-MM-DD:YYYY-MM-DD")
 @click.option("--compare", "compare_range", default=None, help="Comparison window as YYYY-MM-DD:YYYY-MM-DD")
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+@click.option("--contract-output", is_flag=True, help="Output the deterministic tree query contract")
 def evaluate(
     tree_id: str,
     period: str | None,
     current_range: str | None,
     compare_range: str | None,
     as_json: bool,
+    contract_output: bool,
 ) -> None:
     """Evaluate a metric tree over date windows."""
     c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
-    client = QluentClient(load_config())
+    config = load_config()
+    client = QluentClient(config)
     data = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
 
-    if as_json:
+    if contract_output:
+        click.echo(json.dumps(build_tree_query_contract(data, config), indent=2))
+    elif as_json:
         click.echo(json.dumps(data, indent=2))
     else:
         click.echo(format_evaluation(data))

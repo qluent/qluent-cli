@@ -10,7 +10,7 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
-from qluent_cli.contracts import build_tree_query_contract
+from qluent_cli.tree_contracts import build_tree_query_contract
 from qluent_cli.formatters import (
     format_comparison,
     format_evaluation,
@@ -255,6 +255,8 @@ def evaluate(
     contract_output: bool,
 ) -> None:
     """Evaluate a metric tree over date windows."""
+    if as_json and contract_output:
+        raise click.ClickException("Use either --json-output or --contract-output, not both.")
     c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
     config = load_config()
     client = QluentClient(config)

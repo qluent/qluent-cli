@@ -340,6 +340,26 @@ def test_trees_evaluate_contract_output_includes_value_metadata(monkeypatch):
     assert metric_value["delta"]["current_window"]["date_from"] == "2026-03-09"
 
 
+def test_trees_evaluate_rejects_json_and_contract_output_together():
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "evaluate",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--json-output",
+            "--contract-output",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Use either --json-output or --contract-output" in result.output
+
+
 def test_trees_levers_formats_human_output(monkeypatch):
     monkeypatch.setattr(
         "qluent_cli.trees.load_config",

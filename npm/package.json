@@ -1,6 +1,6 @@
 {
   "name": "@qluent/cli",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Install the Qluent CLI",
   "license": "UNLICENSED",
   "bin": {

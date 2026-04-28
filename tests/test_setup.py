@@ -16,7 +16,7 @@ def test_version_outputs_package_version():
     assert f"qluent, version {__version__}" in result.output
 
 
-def test_setup_saves_config_and_writes_claude_md(monkeypatch, isolated_config, tmp_path):
+def test_setup_saves_config_and_writes_agents_md(monkeypatch, isolated_config, tmp_path):
     _config_dir, config_file = isolated_config
     monkeypatch.chdir(tmp_path)
 
@@ -40,9 +40,10 @@ def test_setup_saves_config_and_writes_claude_md(monkeypatch, isolated_config, t
         "user_email": "user@example.com",
         "client_safe": True,
     }
-    claude_md = tmp_path / "CLAUDE.md"
-    assert claude_md.exists()
-    assert "# Qluent Metric Trees" in claude_md.read_text()
+    agents_md = tmp_path / "AGENTS.md"
+    assert agents_md.exists()
+    assert "# Qluent Metric Trees" in agents_md.read_text()
+    assert not (tmp_path / "CLAUDE.md").exists()
 
 
 def test_setup_uses_production_default_api_url(monkeypatch, isolated_config, tmp_path):
@@ -61,7 +62,7 @@ def test_setup_uses_production_default_api_url(monkeypatch, isolated_config, tmp
     )
 
     assert result.exit_code == 0
-    assert "Skipped CLAUDE.md generation" in result.output
+    assert "Skipped AGENTS.md generation" in result.output
     saved = json.loads(config_file.read_text())
     assert saved["api_url"] == config_module.DEFAULT_API_URL
 
@@ -106,6 +107,72 @@ def test_claude_init_requires_force_to_overwrite(monkeypatch, tmp_path):
 
     assert result.exit_code != 0
     assert "already exists" in result.output
+
+
+def test_agents_init_default_writes_agents_md(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(cli, ["agents", "init"])
+
+    assert result.exit_code == 0
+    agents_md = tmp_path / "AGENTS.md"
+    assert agents_md.exists()
+    assert "# Qluent Metric Trees" in agents_md.read_text()
+    assert not (tmp_path / "CLAUDE.md").exists()
+
+
+def test_agents_init_as_claude_writes_claude_md(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(cli, ["agents", "init", "--as", "claude"])
+
+    assert result.exit_code == 0
+    claude_md = tmp_path / "CLAUDE.md"
+    assert claude_md.exists()
+    assert "# Qluent Metric Trees" in claude_md.read_text()
+    assert not (tmp_path / "AGENTS.md").exists()
+
+
+def test_agents_init_as_both_writes_agents_and_claude_pointer(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(cli, ["agents", "init", "--as", "both"])
+
+    assert result.exit_code == 0
+    agents_md = tmp_path / "AGENTS.md"
+    claude_md = tmp_path / "CLAUDE.md"
+    assert agents_md.exists()
+    assert claude_md.exists()
+    # AGENTS.md gets the full instructions; CLAUDE.md is a tiny pointer.
+    assert "Shapley" in agents_md.read_text()
+    pointer = claude_md.read_text()
+    assert "See [AGENTS.md](AGENTS.md)" in pointer
+    assert "Shapley" not in pointer
+
+
+def test_agents_init_requires_force_to_overwrite(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "AGENTS.md").write_text("existing")
+
+    result = CliRunner().invoke(cli, ["agents", "init"])
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+
+    forced = CliRunner().invoke(cli, ["agents", "init", "--force"])
+    assert forced.exit_code == 0
+    assert "# Qluent Metric Trees" in (tmp_path / "AGENTS.md").read_text()
+
+
+def test_agents_init_as_both_rejects_custom_path(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        cli, ["agents", "init", "--as", "both", "--path", "elsewhere.md"]
+    )
+
+    assert result.exit_code != 0
+    assert "incompatible" in result.output
 
 
 def test_status_outputs_connected_project_and_trees(monkeypatch):

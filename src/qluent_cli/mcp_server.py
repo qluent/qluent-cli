@@ -16,6 +16,7 @@ from typing import Any, Awaitable, Callable
 from qluent_cli import __version__
 from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
+from qluent_cli.elasticity import analyze_elasticity
 from qluent_cli.rca_contracts import enrich_rca_output
 from qluent_cli.runs import run_investigation
 from qluent_cli.suggestions import build_suggestions
@@ -384,42 +385,19 @@ async def _elasticity(client: QluentClient, config: QluentConfig, args: dict[str
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
-    tree_id = args["tree_id"]
-    outcome = args["outcome"]
-    lever = args["lever"]
-    dimension = args.get("dimension")
-    data = client.elasticity_tree(
-        tree_id,
-        c_from,
-        c_to,
-        p_from,
-        p_to,
-        outcome=outcome,
-        lever=lever,
-        dimension=dimension,
+    return analyze_elasticity(
+        client,
+        config,
+        tree_id=args["tree_id"],
+        outcome=args["outcome"],
+        lever=args["lever"],
+        dimension=args.get("dimension"),
+        current_from=c_from,
+        current_to=c_to,
+        comparison_from=p_from,
+        comparison_to=p_to,
         filters=_filters_from_arg(args.get("filters")),
     )
-    data.setdefault("contract_kind", "elasticity_analysis")
-    data.setdefault("deterministic", True)
-    data.setdefault("tree_id", tree_id)
-    data.setdefault("outcome", outcome)
-    data.setdefault("lever", lever)
-    data.setdefault("dimension", dimension)
-    data.setdefault("current_window", {"date_from": c_from, "date_to": c_to})
-    data.setdefault("comparison_window", {"date_from": p_from, "date_to": p_to})
-    data.setdefault("evidence_type", "observed_correlation")
-    data.setdefault("warnings", [])
-    data.setdefault(
-        "provenance",
-        {
-            "source": "metric_tree_elasticity",
-            "project_uuid": config.project_uuid,
-            "tree_id": tree_id,
-            "outcome": outcome,
-            "lever": lever,
-        },
-    )
-    return data
 
 
 async def _suggestions(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:

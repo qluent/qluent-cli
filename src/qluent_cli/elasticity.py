@@ -1,15 +1,70 @@
-"""Elasticity analysis command."""
+"""Elasticity analysis command and the underlying business seam."""
 
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import click
 
 from qluent_cli.client import QluentClient
-from qluent_cli.config import load_config
+from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.formatters import format_elasticity
 from qluent_cli.utils import parse_filters, resolve_date_args
+
+
+def analyze_elasticity(
+    client: QluentClient,
+    config: QluentConfig,
+    *,
+    tree_id: str,
+    outcome: str,
+    lever: str,
+    current_from: str,
+    current_to: str,
+    comparison_from: str,
+    comparison_to: str,
+    dimension: str | None = None,
+    filters: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Run elasticity analysis and stamp the deterministic contract fields.
+
+    This is the business seam under the `qluent elasticity` CLI command and
+    the `qluent_elasticity` MCP tool. Both adapters call into here so they
+    cannot drift on contract shape, defaults, or provenance.
+    """
+    data = client.elasticity_tree(
+        tree_id,
+        current_from,
+        current_to,
+        comparison_from,
+        comparison_to,
+        outcome=outcome,
+        lever=lever,
+        dimension=dimension,
+        filters=filters or {},
+    )
+    data.setdefault("contract_kind", "elasticity_analysis")
+    data.setdefault("deterministic", True)
+    data.setdefault("tree_id", tree_id)
+    data.setdefault("outcome", outcome)
+    data.setdefault("lever", lever)
+    data.setdefault("dimension", dimension)
+    data.setdefault("current_window", {"date_from": current_from, "date_to": current_to})
+    data.setdefault("comparison_window", {"date_from": comparison_from, "date_to": comparison_to})
+    data.setdefault("evidence_type", "observed_correlation")
+    data.setdefault("warnings", [])
+    data.setdefault(
+        "provenance",
+        {
+            "source": "metric_tree_elasticity",
+            "project_uuid": config.project_uuid,
+            "tree_id": tree_id,
+            "outcome": outcome,
+            "lever": lever,
+        },
+    )
+    return data
 
 
 @click.command()
@@ -35,39 +90,20 @@ def elasticity(
 ) -> None:
     """Analyze observed elasticity between a lever and an outcome metric."""
     c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
-    parsed_filters = parse_filters(filters)
     config = load_config()
     client = QluentClient(config)
-    data = client.elasticity_tree(
-        tree_id,
-        c_from,
-        c_to,
-        p_from,
-        p_to,
+    data = analyze_elasticity(
+        client,
+        config,
+        tree_id=tree_id,
         outcome=outcome,
         lever=lever,
         dimension=dimension,
-        filters=parsed_filters,
-    )
-    data.setdefault("contract_kind", "elasticity_analysis")
-    data.setdefault("deterministic", True)
-    data.setdefault("tree_id", tree_id)
-    data.setdefault("outcome", outcome)
-    data.setdefault("lever", lever)
-    data.setdefault("dimension", dimension)
-    data.setdefault("current_window", {"date_from": c_from, "date_to": c_to})
-    data.setdefault("comparison_window", {"date_from": p_from, "date_to": p_to})
-    data.setdefault("evidence_type", "observed_correlation")
-    data.setdefault("warnings", [])
-    data.setdefault(
-        "provenance",
-        {
-            "source": "metric_tree_elasticity",
-            "project_uuid": config.project_uuid,
-            "tree_id": tree_id,
-            "outcome": outcome,
-            "lever": lever,
-        },
+        current_from=c_from,
+        current_to=c_to,
+        comparison_from=p_from,
+        comparison_to=p_to,
+        filters=parse_filters(filters),
     )
 
     if as_json:

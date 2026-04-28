@@ -437,5 +437,28 @@ def claude_update() -> None:
 
 cli.add_command(claude)
 
+
+@cli.group()
+def mcp() -> None:
+    """Model Context Protocol integration for non-Claude agents."""
+
+
+@mcp.command("serve")
+def mcp_serve() -> None:
+    """Run an MCP stdio server that exposes the qluent client as MCP tools."""
+    try:
+        from qluent_cli.mcp_server import serve_stdio
+    except ImportError as exc:
+        raise click.ClickException(
+            "The 'mcp' Python SDK is not installed. Install it with: pip install mcp"
+        ) from exc
+
+    import asyncio
+
+    asyncio.run(serve_stdio())
+
+
+cli.add_command(mcp)
+
 if __name__ == "__main__":
     cli()

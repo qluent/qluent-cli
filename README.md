@@ -73,6 +73,59 @@ emits the documented JSON contract in `docs/tree_query_contract.schema.json`. Th
 contract separates returned metric facts from agent interpretation and attaches
 unit, grain, window, and provenance metadata to every metric value.
 
+## MCP Server (Codex CLI, Cursor, Continue, Zed, Claude Code)
+
+`qluent mcp serve` runs an MCP stdio server that exposes the qluent client as
+typed tools. Any agent that speaks the [Model Context Protocol](https://modelcontextprotocol.io)
+can call qluent without per-agent forks. See [docs/mcp.md](docs/mcp.md) for the
+full tool reference.
+
+Available tools: `qluent_list_trees`, `qluent_get_tree`, `qluent_evaluate`,
+`qluent_investigate`, `qluent_deep_dive`, `qluent_rca_analyze`,
+`qluent_elasticity`, `qluent_suggestions`.
+
+The server reuses your `~/.qluent/config.json`, so log in first via
+`qluent login`. Tool outputs are the same JSON contracts the CLI emits with
+`--json-output`.
+
+### Codex CLI (`~/.codex/config.toml`)
+
+```toml
+[mcp_servers.qluent]
+command = "qluent"
+args = ["mcp", "serve"]
+env = { QLUENT_API_KEY = "qk_..." }
+```
+
+### Cursor (`~/.cursor/mcp.json`) / Continue / Zed
+
+```json
+{
+  "mcpServers": {
+    "qluent": {
+      "command": "qluent",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+### Claude Code (`~/.claude/mcp_servers.json`)
+
+```json
+{
+  "mcpServers": {
+    "qluent": {
+      "command": "qluent",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+The existing Claude Code plugin (`qluent claude init`) continues to work
+unchanged; the MCP server is a parallel integration path for non-Claude agents.
+
 ## Internal / Direct Python Install
 
 If you are installing from source instead of the npm distribution, run these commands from the

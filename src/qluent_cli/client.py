@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import random
-import sys
 import threading
 import time
 from collections.abc import Callable
@@ -15,6 +14,7 @@ from typing import Any
 import httpx
 
 from qluent_cli.config import QluentConfig
+from qluent_cli.output import echo_status
 
 
 _INVESTIGATE_TIMEOUT = 300.0
@@ -22,12 +22,15 @@ _PROGRESS_INTERVAL_SECONDS = 30.0
 ProgressCallback = Callable[[str, float], None]
 
 _RETRYABLE_STATUS = frozenset({408, 429, 502, 503, 504})
-_RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+_CONNECTION_RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     httpx.ConnectError,
     httpx.ConnectTimeout,
+)
+_RESPONSE_RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
     httpx.ReadTimeout,
     httpx.RemoteProtocolError,
 )
+_RETRYABLE_EXCEPTIONS = _CONNECTION_RETRYABLE_EXCEPTIONS + _RESPONSE_RETRYABLE_EXCEPTIONS
 _IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 _DEFAULT_BACKOFF: tuple[float, ...] = (0.5, 1.5, 4.0)
 
@@ -55,20 +58,16 @@ def _parse_retry_after(value: str) -> float | None:
 def _default_log(attempt: int, retries: int, reason: str, delay: float) -> None:
     if os.environ.get("QLUENT_QUIET"):
         return
-    sys.stderr.write(
-        f"[qluent] retry {attempt}/{retries} after {reason} in {delay:.1f}s\n"
-    )
-    sys.stderr.flush()
+    echo_status(f"[qluent] retry {attempt}/{retries} after {reason} in {delay:.1f}s")
 
 
 class _RetryTransport(httpx.BaseTransport):
     """Wraps an httpx transport with retries for transient failures.
 
-    Network exceptions (connect errors, read timeout) are retried on all
-    methods — at this layer no response bytes have been observed. Retryable
-    status codes are only retried on idempotent methods so a side-effecting
-    POST is never replayed after the server responded. Honors Retry-After
-    on 429/503.
+    Connection errors are retried on all methods because no bytes were sent.
+    Read/protocol errors and retryable status codes are only retried on
+    idempotent methods, so a side-effecting POST is never replayed after it
+    may have reached the server. Honors Retry-After on 429/503.
     """
 
     def __init__(
@@ -94,6 +93,11 @@ class _RetryTransport(httpx.BaseTransport):
             try:
                 response = self._wrapped.handle_request(request)
             except _RETRYABLE_EXCEPTIONS as exc:
+                if (
+                    not is_idempotent
+                    and not isinstance(exc, _CONNECTION_RETRYABLE_EXCEPTIONS)
+                ):
+                    raise
                 if attempt >= retries:
                     raise
                 delay = self._jitter(self._backoff[attempt])

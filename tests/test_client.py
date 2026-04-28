@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import click
 import httpx
 import pytest
 
@@ -308,6 +309,42 @@ def test_retry_get_read_timeout_is_retried():
     assert len(calls) == 2
 
 
+def test_retry_post_read_timeout_not_retried():
+    calls: list[int] = []
+
+    def handler(request):
+        calls.append(1)
+        raise httpx.ReadTimeout("slow", request=request)
+
+    sleeps: list[float] = []
+    logs: list[tuple] = []
+    client = _make_retry_client(handler, sleeps=sleeps, log_calls=logs)
+
+    with pytest.raises(httpx.ReadTimeout):
+        client.post("https://api.example.com/investigate", json={})
+    assert len(calls) == 1
+    assert sleeps == []
+    assert logs == []
+
+
+def test_retry_post_remote_protocol_error_not_retried():
+    calls: list[int] = []
+
+    def handler(request):
+        calls.append(1)
+        raise httpx.RemoteProtocolError("server disconnected", request=request)
+
+    sleeps: list[float] = []
+    logs: list[tuple] = []
+    client = _make_retry_client(handler, sleeps=sleeps, log_calls=logs)
+
+    with pytest.raises(httpx.RemoteProtocolError):
+        client.post("https://api.example.com/investigate", json={})
+    assert len(calls) == 1
+    assert sleeps == []
+    assert logs == []
+
+
 def test_retry_connect_error_exhausts_then_raises():
     def handler(request):
         raise httpx.ConnectError("nope", request=request)
@@ -417,4 +454,13 @@ def test_retry_log_suppressed_by_quiet_env(capsys, monkeypatch):
     from qluent_cli.client import _default_log
 
     _default_log(1, 3, "502", 0.5)
+    assert capsys.readouterr().err == ""
+
+
+def test_retry_log_suppressed_by_click_quiet(capsys, monkeypatch):
+    monkeypatch.delenv("QLUENT_QUIET", raising=False)
+    from qluent_cli.client import _default_log
+
+    with click.Context(click.Command("qluent"), obj={"quiet": True}):
+        _default_log(1, 3, "502", 0.5)
     assert capsys.readouterr().err == ""

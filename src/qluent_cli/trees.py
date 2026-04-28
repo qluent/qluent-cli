@@ -160,13 +160,13 @@ class _RunReporter:
             prefix = f"[qluent] {tree_id} " if tree_id else "[qluent] "
             echo_status(f"{prefix}received, formatting...")
 
-    def complete(self, result: dict[str, Any]) -> None:
+    def complete(self, result: dict[str, Any], *, run_id: str | None = None) -> None:
         if not self.stream:
             return
         self._emit_jsonl(
             {
                 "type": "run.completed",
-                "run_id": self.run_id,
+                "run_id": run_id or self.run_id,
                 "elapsed_ms": int((time.monotonic() - self.started_at) * 1000),
                 "result": result,
             }
@@ -711,7 +711,7 @@ def investigate(
     )
 
     if stream:
-        reporter.complete(bundle)
+        reporter.complete(bundle, run_id=record.run_id if record else None)
         return
     _emit_investigation(
         bundle,
@@ -912,7 +912,7 @@ def deep_dive(
         )
 
     if stream:
-        reporter.complete(bundle)
+        reporter.complete(bundle, run_id=record.run_id if record else None)
         return
 
     _emit_deep_dive(

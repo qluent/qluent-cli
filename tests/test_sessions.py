@@ -87,6 +87,17 @@ def test_record_run_writes_file_and_indexes(isolated_config):
     assert body["result"] == {"tree_id": "revenue", "delta": 10}
 
 
+def test_record_run_sanitizes_tree_id_for_filename(isolated_config):
+    record = _record(tree_id="../sales/revenue", payload={"tree_id": "../sales/revenue"})
+
+    assert record.tree_id == "../sales/revenue"
+    assert record.path.name.endswith(f"-{record.run_id}.json")
+    assert record.path.name.startswith("sales_revenue-")
+    assert record.path.parent == isolated_config[0] / "sessions" / record.started_at[:4] / record.started_at[5:7] / record.started_at[8:10]
+    body = json.loads(record.path.read_text())
+    assert body["tree_id"] == "../sales/revenue"
+
+
 def test_get_run_returns_none_when_missing(isolated_config):
     assert sessions.get_run("01234567ABCDEFGH") is None
 
@@ -300,6 +311,63 @@ def test_investigate_persists_run_and_resumable(isolated_config, monkeypatch):
     )
     assert last.exit_code == 0, last.output
     assert len(api_calls) == 1
+
+
+def test_investigate_stream_completion_run_id_is_resumable(isolated_config, monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
+    )
+
+    api_calls: list[str] = []
+
+    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+        api_calls.append(tree_id)
+        return {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "agent": {"top_findings": ["grew 10%"]},
+        }
+
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree", mock_investigate
+    )
+
+    runner = CliRunner()
+    streamed = runner.invoke(
+        cli,
+        [
+            "trees",
+            "investigate",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--json-output",
+            "--stream",
+        ],
+    )
+    assert streamed.exit_code == 0, streamed.output
+    events = [json.loads(line) for line in streamed.output.splitlines()]
+    completed = events[-1]
+    assert completed["type"] == "run.completed"
+
+    resumed = runner.invoke(
+        cli,
+        [
+            "trees",
+            "investigate",
+            "revenue",
+            "--resume",
+            completed["run_id"],
+            "--json-output",
+        ],
+    )
+    assert resumed.exit_code == 0, resumed.output
+    assert len(api_calls) == 1
+    assert json.loads(resumed.output)["tree_id"] == "revenue"
 
 
 def test_investigate_failure_does_not_persist(isolated_config, monkeypatch):

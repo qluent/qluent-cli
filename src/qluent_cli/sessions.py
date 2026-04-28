@@ -52,6 +52,13 @@ _NATURAL_SECONDS = {
 }
 
 
+def _safe_filename_component(value: str | None) -> str:
+    if not value:
+        return "all"
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._")
+    return safe or "tree"
+
+
 def _sessions_dir() -> Path:
     return _config_module.CONFIG_DIR / "sessions"
 
@@ -174,7 +181,7 @@ def record_run(
 
     base = _sessions_dir() / f"{now:%Y/%m/%d}"
     base.mkdir(parents=True, exist_ok=True)
-    file_name = f"{tree_id or 'all'}-{run_id}.json"
+    file_name = f"{_safe_filename_component(tree_id)}-{run_id}.json"
     path = base / file_name
 
     file_payload = {

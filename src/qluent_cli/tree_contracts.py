@@ -2,13 +2,84 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
 from qluent_cli.config import QluentConfig
-from qluent_cli.contract_helpers import inclusive_day_count, provenance
+from qluent_cli.contract_helpers import (
+    ProjectContext,
+    Provenance,
+    Window,
+    inclusive_day_count,
+    provenance,
+)
 
 
 TREE_QUERY_SCHEMA_VERSION = "qluent.tree_query.v1"
+
+
+class MetricValue(TypedDict):
+    value: Any
+    unit: str
+    grain: str
+    window: Window | None
+    provenance: Provenance
+
+
+class MetricDelta(TypedDict):
+    value: Any
+    ratio: Any
+    unit: str
+    grain: str
+    current_window: Window | None
+    comparison_window: Window | None
+    provenance: Provenance
+
+
+class NodeMetricValue(TypedDict, total=False):
+    node_id: str
+    label: str
+    kind: str | None
+    current: MetricValue
+    comparison: MetricValue
+    delta: MetricDelta
+
+
+class RootMetric(TypedDict):
+    id: str
+    label: str
+    unit: str
+
+
+class TreeRef(TypedDict):
+    id: str
+    label: str
+    root_node_id: Any
+
+
+class TreeWindows(TypedDict):
+    current: Window | None
+    comparison: Window | None
+    current_day_count: int | None
+    comparison_day_count: int | None
+
+
+class TreeQueryContract(TypedDict):
+    schema_version: str
+    contract_kind: str
+    deterministic: bool
+    agent_interpretation: Any
+    project_context: ProjectContext
+    tree: TreeRef
+    root_metric: RootMetric
+    grain: str
+    dimensions: list[Any]
+    filters: dict[str, Any]
+    windows: TreeWindows
+    metric_values: list[NodeMetricValue]
+    child_decomposition: list[Any]
+    dimension_breakdowns: list[Any]
+    warnings: list[Any]
+    provenance: Provenance
 
 
 def _metric_value(
@@ -16,9 +87,9 @@ def _metric_value(
     value: Any,
     unit: str | None,
     grain: str | None,
-    window: dict[str, Any] | None,
-    value_provenance: dict[str, Any],
-) -> dict[str, Any]:
+    window: Window | None,
+    value_provenance: Provenance,
+) -> MetricValue:
     return {
         "value": value,
         "unit": unit or "unknown",
@@ -33,7 +104,7 @@ def build_tree_query_contract(
     config: QluentConfig,
     *,
     filters: dict[str, list[str]] | None = None,
-) -> dict[str, Any]:
+) -> TreeQueryContract:
     """Convert a tree evaluation response into the deterministic query contract."""
     tree_id = str(evaluation.get("tree_id") or "")
     root_node_id = evaluation.get("root_node_id")
@@ -44,7 +115,7 @@ def build_tree_query_contract(
 
     nodes = evaluation.get("nodes") or []
     root_node = next((node for node in nodes if node.get("id") == root_node_id), None)
-    root_metric = {
+    root_metric: RootMetric = {
         "id": root_node_id or tree_id,
         "label": evaluation.get("tree_label") or (root_node or {}).get("label") or tree_id,
         "unit": (root_node or {}).get("unit") or unit or "unknown",
@@ -73,17 +144,19 @@ def build_tree_query_contract(
             )
         ]
 
+    project_context: ProjectContext = {
+        "project_uuid": config.project_uuid,
+        "user_email": config.user_email,
+        "api_url": config.api_url,
+        "client_safe": config.client_safe,
+    }
+
     return {
         "schema_version": TREE_QUERY_SCHEMA_VERSION,
         "contract_kind": "deterministic_tree_query",
         "deterministic": True,
         "agent_interpretation": None,
-        "project_context": {
-            "project_uuid": config.project_uuid,
-            "user_email": config.user_email,
-            "api_url": config.api_url,
-            "client_safe": config.client_safe,
-        },
+        "project_context": project_context,
         "tree": {
             "id": tree_id,
             "label": evaluation.get("tree_label") or tree_id,
@@ -119,10 +192,10 @@ def _build_node_metric_values(
     tree_id: str,
     unit: str | None,
     grain: str | None,
-    current_window: dict[str, Any] | None,
-    comparison_window: dict[str, Any] | None,
-) -> list[dict[str, Any]]:
-    metric_values: list[dict[str, Any]] = []
+    current_window: Window | None,
+    comparison_window: Window | None,
+) -> list[NodeMetricValue]:
+    metric_values: list[NodeMetricValue] = []
     for node in nodes:
         node_id = str(node.get("id") or node.get("node_id") or "")
         node_unit = node.get("unit") or unit
@@ -172,12 +245,12 @@ def _build_root_metric_value(
     *,
     config: QluentConfig,
     tree_id: str,
-    root_metric: dict[str, Any],
+    root_metric: RootMetric,
     unit: str | None,
     grain: str | None,
-    current_window: dict[str, Any] | None,
-    comparison_window: dict[str, Any] | None,
-) -> dict[str, Any]:
+    current_window: Window | None,
+    comparison_window: Window | None,
+) -> NodeMetricValue:
     root_provenance = provenance(
         source="metric_tree_evaluate",
         project_uuid=config.project_uuid,

@@ -3,18 +3,66 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, TypedDict
 
 from qluent_cli.config import QluentConfig
-from qluent_cli.contract_helpers import inclusive_day_count, provenance
+from qluent_cli.contract_helpers import (
+    Provenance,
+    Window,
+    WindowMetadata,
+    inclusive_day_count,
+    provenance,
+)
 
 
 RCA_SCHEMA_VERSION = "qluent.rca.v1"
 
 
-def enrich_rca_output(data: dict[str, Any], config: QluentConfig) -> dict[str, Any]:
+class RCAOutput(TypedDict, total=False):
+    """Agent-facing RCA output. Total=False because the upstream API response
+    forms the base; enrichment adds the keys below but the upstream shape
+    is partially out of our control."""
+
+    schema_version: str
+    contract_kind: str
+    deterministic: bool
+    tree_id: str
+    tree_label: str
+    root_node_id: Any
+    current_window: Window
+    comparison_window: Window
+    current_value: Any
+    comparison_value: Any
+    delta_value: Any
+    delta_ratio: Any
+    unit: str
+    grain: str
+    window_metadata: WindowMetadata
+    normalized_delta_value: float
+    normalized_delta_ratio: float | None
+    provenance: Provenance
+    findings: list[dict[str, Any]]
+    time_slices: list[dict[str, Any]]
+    mix_shift: dict[str, Any]
+    conclusion: dict[str, Any]
+    dimensions_considered: list[str]
+    time_slice_grain: str
+    warnings: list[Any]
+
+
+class _MaterialityContext(TypedDict):
+    tree_id: str
+    root_delta: Any
+    unit: str
+    grain: str
+    current_days: int | None
+    comparison_days: int | None
+    windows_differ: bool
+
+
+def enrich_rca_output(data: dict[str, Any], config: QluentConfig) -> RCAOutput:
     """Add agent-ready materiality, normalization, and provenance metadata."""
-    enriched = deepcopy(data)
+    enriched: RCAOutput = deepcopy(data)  # type: ignore[assignment]
     tree_id = str(enriched.get("tree_id") or "")
     current_window = enriched.get("current_window")
     comparison_window = enriched.get("comparison_window")
@@ -48,7 +96,7 @@ def enrich_rca_output(data: dict[str, Any], config: QluentConfig) -> dict[str, A
     )
     _add_normalized_delta(enriched, current_days, comparison_days, windows_differ)
 
-    materiality_context = {
+    materiality_context: _MaterialityContext = {
         "tree_id": tree_id,
         "root_delta": root_delta,
         "unit": unit,
@@ -70,7 +118,7 @@ def _window_metadata(
     current_days: int | None,
     comparison_days: int | None,
     windows_differ: bool,
-) -> dict[str, Any]:
+) -> WindowMetadata:
     current_window = data.get("current_window") or {}
     comparison_window = data.get("comparison_window") or {}
     return {
@@ -115,7 +163,7 @@ def _add_normalized_delta(
 def _add_materiality(
     item: dict[str, Any],
     config: QluentConfig,
-    context: dict[str, Any],
+    context: _MaterialityContext,
     *,
     node_id: str | None = None,
 ) -> None:
@@ -152,7 +200,7 @@ def _add_materiality(
 def _enrich_findings(
     data: dict[str, Any],
     config: QluentConfig,
-    context: dict[str, Any],
+    context: _MaterialityContext,
 ) -> None:
     for finding in data.get("findings") or []:
         _add_materiality(finding, config, context, node_id=finding.get("node_id"))
@@ -170,7 +218,7 @@ def _enrich_findings(
 def _enrich_time_slices(
     data: dict[str, Any],
     config: QluentConfig,
-    context: dict[str, Any],
+    context: _MaterialityContext,
 ) -> None:
     for slice_result in data.get("time_slices") or []:
         _add_materiality(slice_result, config, context)
@@ -181,7 +229,7 @@ def _enrich_time_slices(
 def _enrich_mix_shift(
     data: dict[str, Any],
     config: QluentConfig,
-    context: dict[str, Any],
+    context: _MaterialityContext,
 ) -> None:
     mix_shift = data.get("mix_shift") or {}
     for segment in mix_shift.get("segments") or []:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shlex
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date as dt_date
 from typing import Any
 
@@ -526,3 +527,134 @@ def investigate(
         click.echo(json.dumps(bundle, indent=2))
     else:
         click.echo(format_investigation(bundle))
+
+
+@trees.command(name="deep-dive")
+@click.option("--period", "-p", default=None, help='Period like "last week" or "this month"')
+@click.option("--current", "current_range", default=None, help="Current window as YYYY-MM-DD:YYYY-MM-DD")
+@click.option("--compare", "compare_range", default=None, help="Comparison window as YYYY-MM-DD:YYYY-MM-DD")
+@click.option(
+    "--tree",
+    "tree_ids",
+    multiple=True,
+    help="Limit to specific trees (repeatable). Defaults to every tree in the project.",
+)
+@click.option("--trend-periods", default=4, type=click.IntRange(1, 52))
+@click.option("--trend-grain", default="week", type=click.Choice(["week", "month"]))
+@click.option("--trend-as-of", default=None, help="Reference date for bundled trend as YYYY-MM-DD")
+@click.option("--max-depth", default=3, type=click.IntRange(1, 6))
+@click.option("--max-branches", default=2, type=click.IntRange(1, 10))
+@click.option("--max-segments", default=5, type=click.IntRange(1, 20))
+@click.option(
+    "--min-contribution-share",
+    default=0.1,
+    type=click.FloatRange(0.0, 1.0),
+)
+@click.option(
+    "--max-workers",
+    default=4,
+    type=click.IntRange(1, 8),
+    help="Maximum number of trees to investigate in parallel.",
+)
+@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+def deep_dive(
+    period: str | None,
+    current_range: str | None,
+    compare_range: str | None,
+    tree_ids: tuple[str, ...],
+    trend_periods: int,
+    trend_grain: str,
+    trend_as_of: str | None,
+    max_depth: int,
+    max_branches: int,
+    max_segments: int,
+    min_contribution_share: float,
+    max_workers: int,
+    as_json: bool,
+) -> None:
+    """Run investigations across every tree in parallel and bundle the results."""
+    client = QluentClient(load_config())
+    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+
+    trees_data = client.list_trees()
+    available = [t.get("id") for t in trees_data.get("trees", []) if t.get("id")]
+
+    if tree_ids:
+        unknown = sorted(set(tree_ids) - set(available))
+        if unknown:
+            raise click.ClickException(
+                f"Unknown tree(s): {', '.join(unknown)}. Available: {', '.join(available)}"
+            )
+        targets = list(tree_ids)
+    else:
+        targets = available
+
+    if not targets:
+        raise click.ClickException("No trees available for this project.")
+
+    available_tree_ids, metrics_by_tree = _collect_tree_metadata(trees_data)
+
+    def _investigate(tid: str) -> dict[str, Any]:
+        bundle = client.investigate_tree(
+            tid,
+            c_from,
+            c_to,
+            p_from,
+            p_to,
+            trend_periods=trend_periods,
+            trend_grain=trend_grain,
+            trend_as_of=trend_as_of,
+            max_depth=max_depth,
+            max_branching=max_branches,
+            max_segments=max_segments,
+            min_contribution_share=min_contribution_share,
+        )
+        _sanitize_recommended_next_steps(
+            bundle,
+            available_tree_ids=available_tree_ids,
+            metrics_by_tree=metrics_by_tree,
+        )
+        return bundle
+
+    results: dict[str, dict[str, Any]] = {}
+    errors: dict[str, str] = {}
+    workers = min(max_workers, len(targets))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_investigate, tid): tid for tid in targets}
+        for future in as_completed(futures):
+            tid = futures[future]
+            try:
+                results[tid] = future.result()
+            except Exception as exc:
+                errors[tid] = f"{type(exc).__name__}: {exc}"
+
+    ordered_results = {tid: results[tid] for tid in targets if tid in results}
+
+    bundle = {
+        "period": {
+            "current_from": c_from,
+            "current_to": c_to,
+            "comparison_from": p_from,
+            "comparison_to": p_to,
+        },
+        "trees_requested": targets,
+        "trees": ordered_results,
+        "errors": errors,
+    }
+
+    if as_json:
+        click.echo(json.dumps(bundle, indent=2))
+        return
+
+    period_label = format_period_label(c_from, c_to, p_from, p_to)
+    click.echo(f"Deep-dive across {len(targets)} tree(s) — {period_label}")
+    click.echo("")
+    for tid in targets:
+        click.echo("=" * 72)
+        click.echo(f"Tree: {tid}")
+        click.echo("=" * 72)
+        if tid in ordered_results:
+            click.echo(format_investigation(ordered_results[tid]))
+        else:
+            click.echo(f"  Failed: {errors.get(tid, 'unknown error')}")
+        click.echo("")

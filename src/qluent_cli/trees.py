@@ -30,7 +30,8 @@ from qluent_cli.formatters import (
     format_tree_list,
     format_tree_validation,
 )
-from qluent_cli.utils import parse_filters, resolve_date_args
+from qluent_cli.dates import resolve_windows
+from qluent_cli.utils import parse_filters
 
 
 @click.group()
@@ -310,7 +311,9 @@ def evaluate(
     """Evaluate a metric tree over date windows."""
     if as_json and contract_output:
         raise click.ClickException("Use either --json-output or --contract-output, not both.")
-    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    windows = resolve_windows(period, current_range, compare_range)
+    c_from, c_to = windows.current.iso_from, windows.current.iso_to
+    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
     config = load_config()
     client = QluentClient(config)
     data = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
@@ -348,7 +351,9 @@ def levers(
     as_json: bool,
 ) -> None:
     """Quantify top lever impacts from tree elasticities."""
-    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    windows = resolve_windows(period, current_range, compare_range)
+    c_from, c_to = windows.current.iso_from, windows.current.iso_to
+    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
     client = QluentClient(load_config())
     evaluation = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
     data = _build_lever_analysis(evaluation, top_n=top, scenarios=scenarios)
@@ -393,7 +398,9 @@ def compare(
     as_json: bool,
 ) -> None:
     """Compare multiple metric trees side by side for the same period."""
-    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    windows = resolve_windows(period, current_range, compare_range)
+    c_from, c_to = windows.current.iso_from, windows.current.iso_to
+    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
 
     client = QluentClient(load_config())
     results: list[tuple[str, dict[str, Any]]] = []
@@ -466,7 +473,9 @@ def investigate(
     config = load_config()
     client = QluentClient(config)
     parsed_filters = parse_filters(filters)
-    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    windows = resolve_windows(period, current_range, compare_range)
+    c_from, c_to = windows.current.iso_from, windows.current.iso_to
+    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
     period_label = format_period_label(c_from, c_to, p_from, p_to)
     reporter = RunReporter(
         command="investigate",
@@ -619,7 +628,9 @@ def deep_dive(
 
     config = load_config()
     client = QluentClient(config)
-    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    windows = resolve_windows(period, current_range, compare_range)
+    c_from, c_to = windows.current.iso_from, windows.current.iso_to
+    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
 
     trees_data = client.list_trees()
     available = [t.get("id") for t in trees_data.get("trees", []) if t.get("id")]

@@ -198,7 +198,8 @@ def test_dispatch_investigate_forwards_rca_options():
             config=CONFIG,
         )
     )
-    kwargs = client.calls[0][2]
+    investigate_call = next(c for c in client.calls if c[0] == "investigate_tree")
+    kwargs = investigate_call[2]
     assert kwargs["segment_by"] == ["region"]
     assert kwargs["filters"] == {"region": ["EU"]}
     assert kwargs["max_depth"] == 2

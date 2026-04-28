@@ -1,12 +1,13 @@
-"""Metric tree commands — list, evaluate, trend, compare, investigate."""
+"""Metric tree commands — list, evaluate, trend, compare, investigate.
+
+Run lifecycle (start / progress / sanitize / complete) lives in `runs.py`.
+The Click commands here are adapters: they parse options, drive the lifecycle
+module, and render output.
+"""
 
 from __future__ import annotations
 
 import json
-import shlex
-import threading
-import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date as dt_date
 from typing import Any
@@ -16,7 +17,7 @@ import click
 from qluent_cli import sessions
 from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
-from qluent_cli.output import echo_status
+from qluent_cli.runs import RunReporter, run_investigation
 from qluent_cli.tree_contracts import build_tree_query_contract
 from qluent_cli.formatters import (
     format_comparison,
@@ -98,83 +99,6 @@ _LEVER_KEYWORDS = (
     "increase",
     "decrease",
 )
-
-
-class _RunReporter:
-    def __init__(
-        self,
-        *,
-        command: str,
-        stream: bool,
-        tree_id: str | None = None,
-        tree_count: int | None = None,
-        period_label: str,
-    ) -> None:
-        self.command = command
-        self.stream = stream
-        self.tree_id = tree_id
-        self.tree_count = tree_count
-        self.period_label = period_label
-        self.run_id = str(uuid.uuid4())
-        self.started_at = time.monotonic()
-        self._lock = threading.Lock()
-
-    def start(self) -> None:
-        if self.stream:
-            payload: dict[str, Any] = {
-                "type": "run.started",
-                "run_id": self.run_id,
-                "command": self.command,
-                "period": self.period_label,
-            }
-            if self.tree_id is not None:
-                payload["tree"] = self.tree_id
-            if self.tree_count is not None:
-                payload["tree_count"] = self.tree_count
-            self._emit_jsonl(payload)
-            return
-
-        target = self.tree_id or f"{self.tree_count} tree(s)"
-        echo_status(f"[qluent] {self.command} {target} period={self.period_label} starting...")
-
-    def progress(self, stage: str, *, tree_id: str | None = None, elapsed: float | None = None) -> None:
-        elapsed_ms = int(((elapsed or (time.monotonic() - self.started_at)) * 1000))
-        if self.stream:
-            payload: dict[str, Any] = {
-                "type": "run.progress",
-                "run_id": self.run_id,
-                "stage": stage,
-                "elapsed_ms": elapsed_ms,
-            }
-            if tree_id is not None:
-                payload["tree"] = tree_id
-            self._emit_jsonl(payload)
-            return
-
-        if stage == "awaiting_api":
-            seconds = max(0, round(elapsed_ms / 1000))
-            suffix = f" ({seconds}s)" if seconds else ""
-            prefix = f"[qluent] {tree_id} " if tree_id else "[qluent] "
-            echo_status(f"{prefix}awaiting response...{suffix}")
-        elif stage == "formatting":
-            prefix = f"[qluent] {tree_id} " if tree_id else "[qluent] "
-            echo_status(f"{prefix}received, formatting...")
-
-    def complete(self, result: dict[str, Any], *, run_id: str | None = None) -> None:
-        if not self.stream:
-            return
-        self._emit_jsonl(
-            {
-                "type": "run.completed",
-                "run_id": run_id or self.run_id,
-                "elapsed_ms": int((time.monotonic() - self.started_at) * 1000),
-                "result": result,
-            }
-        )
-
-    def _emit_jsonl(self, payload: dict[str, Any]) -> None:
-        with self._lock:
-            click.echo(json.dumps(payload, separators=(",", ":")))
 
 
 def _is_lever_question(question: str | None) -> bool:
@@ -325,107 +249,6 @@ def _collect_trend_evaluations(
         )
         evaluations.append(data)
     return evaluations
-
-
-def _collect_tree_metadata(trees_data: dict[str, Any]) -> tuple[set[str], dict[str, set[str]]]:
-    tree_ids: set[str] = set()
-    metrics_by_tree: dict[str, set[str]] = {}
-    for tree in trees_data.get("trees") or []:
-        tree_id = tree.get("id")
-        if not tree_id:
-            continue
-        tree_id = str(tree_id)
-        tree_ids.add(tree_id)
-        metrics: set[str] = set()
-        for node in tree.get("nodes") or []:
-            node_id = node.get("id") or node.get("node_id")
-            if node_id:
-                metrics.add(str(node_id))
-        metrics_by_tree[tree_id] = metrics
-    return tree_ids, metrics_by_tree
-
-
-def _option_start(tokens: list[str]) -> int:
-    for index, token in enumerate(tokens):
-        if token.startswith("-"):
-            return index
-    return len(tokens)
-
-
-def _convert_metric_compare_command(
-    *,
-    primary_tree: str,
-    metric_id: str,
-    option_tokens: list[str],
-) -> str:
-    command = ["qluent", "rca", "analyze", primary_tree, "--metric", metric_id]
-    command.extend(option_tokens)
-    return " ".join(shlex.quote(token) for token in command)
-
-
-def _sanitize_recommended_next_steps(
-    bundle: dict[str, Any],
-    *,
-    available_tree_ids: set[str],
-    metrics_by_tree: dict[str, set[str]],
-) -> None:
-    agent = bundle.get("agent")
-    if not isinstance(agent, dict):
-        return
-
-    next_steps = agent.get("recommended_next_steps")
-    if not isinstance(next_steps, list):
-        return
-
-    for step in next_steps:
-        if not isinstance(step, dict):
-            continue
-        command = step.get("command")
-        if not isinstance(command, str) or not command.strip():
-            continue
-        try:
-            tokens = shlex.split(command)
-        except ValueError:
-            step.pop("command", None)
-            step["why"] = (step.get("why") or "Recommended command was malformed.").rstrip()
-            continue
-        if tokens[:3] != ["qluent", "trees", "compare"]:
-            continue
-
-        start = _option_start(tokens[3:])
-        tree_args = tokens[3 : 3 + start]
-        option_tokens = tokens[3 + start :]
-        invalid_targets = [target for target in tree_args if target not in available_tree_ids]
-        if not invalid_targets:
-            continue
-
-        primary_tree = tree_args[0] if tree_args else str(bundle.get("tree_id") or "")
-        if (
-            len(tree_args) == 2
-            and len(invalid_targets) == 1
-            and primary_tree in available_tree_ids
-            and invalid_targets[0] in metrics_by_tree.get(primary_tree, set())
-        ):
-            metric_id = invalid_targets[0]
-            step["command"] = _convert_metric_compare_command(
-                primary_tree=primary_tree,
-                metric_id=metric_id,
-                option_tokens=option_tokens,
-            )
-            step["why"] = (
-                (step.get("why") or "").rstrip()
-                + f" Converted from compare because `{metric_id}` is a metric in `{primary_tree}`, not a tree id."
-            ).strip()
-            continue
-
-        step.pop("command", None)
-        step["why"] = (
-            (step.get("why") or "").rstrip()
-            + " No executable command emitted because compare targets must be available tree ids: "
-            + ", ".join(sorted(available_tree_ids))
-            + "."
-        ).strip()
-
 
 
 @trees.command(name="list")
@@ -645,7 +468,7 @@ def investigate(
     parsed_filters = parse_filters(filters)
     c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
     period_label = format_period_label(c_from, c_to, p_from, p_to)
-    reporter = _RunReporter(
+    reporter = RunReporter(
         command="investigate",
         stream=stream,
         tree_id=tree_id,
@@ -653,16 +476,19 @@ def investigate(
     )
     if stream or not as_json:
         reporter.start()
-    available_tree_ids, metrics_by_tree = _collect_tree_metadata(client.list_trees())
+    trees_data = client.list_trees()
     if stream or not as_json:
         reporter.progress("awaiting_api")
 
-    bundle = client.investigate_tree(
-        tree_id,
-        c_from,
-        c_to,
-        p_from,
-        p_to,
+    bundle = run_investigation(
+        client,
+        tree_id=tree_id,
+        current_from=c_from,
+        current_to=c_to,
+        comparison_from=p_from,
+        comparison_to=p_to,
+        trees_data=trees_data,
+        progress_callback=lambda stage, elapsed: reporter.progress(stage, elapsed=elapsed),
         trend_periods=trend_periods,
         trend_grain=trend_grain,
         trend_as_of=trend_as_of,
@@ -673,15 +499,9 @@ def investigate(
         max_branching=max_branches,
         max_segments=max_segments,
         min_contribution_share=min_contribution_share,
-        progress_callback=lambda stage, elapsed: reporter.progress(stage, elapsed=elapsed),
     )
     if stream or not as_json:
         reporter.progress("formatting")
-    _sanitize_recommended_next_steps(
-        bundle,
-        available_tree_ids=available_tree_ids,
-        metrics_by_tree=metrics_by_tree,
-    )
 
     record = _persist_run_safely(
         command=sessions.INVESTIGATE_COMMAND,
@@ -817,9 +637,8 @@ def deep_dive(
     if not targets:
         raise click.ClickException("No trees available for this project.")
 
-    available_tree_ids, metrics_by_tree = _collect_tree_metadata(trees_data)
     period_label = format_period_label(c_from, c_to, p_from, p_to)
-    reporter = _RunReporter(
+    reporter = RunReporter(
         command="deep-dive",
         stream=stream,
         tree_count=len(targets),
@@ -831,12 +650,17 @@ def deep_dive(
     def _investigate(tid: str) -> dict[str, Any]:
         if stream or not as_json:
             reporter.progress("awaiting_api", tree_id=tid)
-        bundle = client.investigate_tree(
-            tid,
-            c_from,
-            c_to,
-            p_from,
-            p_to,
+        bundle = run_investigation(
+            client,
+            tree_id=tid,
+            current_from=c_from,
+            current_to=c_to,
+            comparison_from=p_from,
+            comparison_to=p_to,
+            trees_data=trees_data,
+            progress_callback=lambda stage, elapsed: reporter.progress(
+                stage, tree_id=tid, elapsed=elapsed
+            ),
             trend_periods=trend_periods,
             trend_grain=trend_grain,
             trend_as_of=trend_as_of,
@@ -844,17 +668,9 @@ def deep_dive(
             max_branching=max_branches,
             max_segments=max_segments,
             min_contribution_share=min_contribution_share,
-            progress_callback=lambda stage, elapsed: reporter.progress(
-                stage, tree_id=tid, elapsed=elapsed
-            ),
         )
         if stream or not as_json:
             reporter.progress("formatting", tree_id=tid)
-        _sanitize_recommended_next_steps(
-            bundle,
-            available_tree_ids=available_tree_ids,
-            metrics_by_tree=metrics_by_tree,
-        )
         return bundle
 
     results: dict[str, dict[str, Any]] = {}

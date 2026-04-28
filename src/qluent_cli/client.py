@@ -19,6 +19,13 @@ from qluent_cli.output import echo_status
 
 _INVESTIGATE_TIMEOUT = 300.0
 _PROGRESS_INTERVAL_SECONDS = 30.0
+
+# Heartbeat callback used by `investigate_tree` to surface that a long-running
+# POST is still in flight. Invoked from a background thread roughly every
+# `_PROGRESS_INTERVAL_SECONDS` with `(stage_name, elapsed_seconds)`. Today the
+# only emitted stage is "awaiting_api". The callback must be thread-safe and
+# non-blocking. Unrelated to retry — retries happen inside the transport and
+# are surfaced through `_default_log`, not through this callback.
 ProgressCallback = Callable[[str, float], None]
 
 _RETRYABLE_STATUS = frozenset({408, 429, 502, 503, 504})
@@ -255,7 +262,13 @@ class QluentClient:
         min_contribution_share: float = 0.1,
         progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any]:
-        """Run a full server-side investigation bundle."""
+        """Run a full server-side investigation bundle.
+
+        If `progress_callback` is supplied, a daemon thread emits an
+        `("awaiting_api", elapsed_seconds)` heartbeat every
+        `_PROGRESS_INTERVAL_SECONDS` until the POST returns. The thread is
+        torn down before the response is returned, regardless of outcome.
+        """
         body = self._rca_body(
             current_from, current_to, comparison_from, comparison_to,
             segment_by=segment_by, filters=filters, metric=metric,
@@ -268,39 +281,27 @@ class QluentClient:
             "trend_as_of": trend_as_of,
             "compare_trees": compare_trees or [],
         })
-        resp = self._post_with_progress(
-            f"{self._base}/metric-trees/{tree_id}/investigate/",
-            json=body,
-            timeout=_INVESTIGATE_TIMEOUT,
-            progress_callback=progress_callback,
-        )
+        url = f"{self._base}/metric-trees/{tree_id}/investigate/"
+
+        if progress_callback is None:
+            resp = self._client.post(url, json=body, timeout=_INVESTIGATE_TIMEOUT)
+        else:
+            started = time.monotonic()
+            done = threading.Event()
+
+            def tick() -> None:
+                while not done.wait(_PROGRESS_INTERVAL_SECONDS):
+                    progress_callback("awaiting_api", time.monotonic() - started)
+
+            heartbeat = threading.Thread(target=tick, daemon=True)
+            heartbeat.start()
+            try:
+                resp = self._client.post(url, json=body, timeout=_INVESTIGATE_TIMEOUT)
+            finally:
+                done.set()
+
         resp.raise_for_status()
         return resp.json()
-
-    def _post_with_progress(
-        self,
-        url: str,
-        *,
-        json: dict[str, Any],
-        timeout: float,
-        progress_callback: ProgressCallback | None,
-    ) -> httpx.Response:
-        if progress_callback is None:
-            return self._client.post(url, json=json, timeout=timeout)
-
-        started = time.monotonic()
-        done = threading.Event()
-
-        def tick() -> None:
-            while not done.wait(_PROGRESS_INTERVAL_SECONDS):
-                progress_callback("awaiting_api", time.monotonic() - started)
-
-        thread = threading.Thread(target=tick, daemon=True)
-        thread.start()
-        try:
-            return self._client.post(url, json=json, timeout=timeout)
-        finally:
-            done.set()
 
     def root_cause_tree(
         self,

@@ -652,3 +652,172 @@ def test_trees_match_subcommand_removed():
 
     assert result.exit_code != 0
     assert "no such command" in result.output.lower()
+
+
+def _stub_config(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+
+def test_trees_deep_dive_runs_all_trees(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {
+            "trees": [
+                {"id": "revenue", "nodes": []},
+                {"id": "growth", "nodes": []},
+                {"id": "operations", "nodes": []},
+            ]
+        },
+    )
+
+    calls: list[str] = []
+
+    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+        calls.append(tree_id)
+        return {
+            "tree_id": tree_id,
+            "tree_label": tree_id.title(),
+            "agent": {"top_findings": [f"{tree_id} ok"]},
+        }
+
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree", mock_investigate
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "deep-dive",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["trees_requested"] == ["revenue", "growth", "operations"]
+    assert set(payload["trees"].keys()) == {"revenue", "growth", "operations"}
+    assert payload["errors"] == {}
+    assert sorted(calls) == ["growth", "operations", "revenue"]
+    assert payload["period"]["current_from"] == "2026-03-09"
+
+
+def test_trees_deep_dive_filters_to_requested_trees(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {
+            "trees": [
+                {"id": "revenue", "nodes": []},
+                {"id": "growth", "nodes": []},
+            ]
+        },
+    )
+    calls: list[str] = []
+
+    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+        calls.append(tree_id)
+        return {"tree_id": tree_id, "agent": {}}
+
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree", mock_investigate
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "deep-dive",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--tree",
+            "revenue",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["trees_requested"] == ["revenue"]
+    assert calls == ["revenue"]
+
+
+def test_trees_deep_dive_rejects_unknown_tree(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "deep-dive",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--tree",
+            "missing",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "Unknown tree(s): missing" in result.output
+
+
+def test_trees_deep_dive_captures_per_tree_errors(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {
+            "trees": [
+                {"id": "revenue", "nodes": []},
+                {"id": "growth", "nodes": []},
+            ]
+        },
+    )
+
+    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+        if tree_id == "growth":
+            raise RuntimeError("upstream timeout")
+        return {"tree_id": tree_id, "agent": {}}
+
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree", mock_investigate
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "deep-dive",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert "revenue" in payload["trees"]
+    assert "growth" not in payload["trees"]
+    assert payload["errors"] == {"growth": "RuntimeError: upstream timeout"}

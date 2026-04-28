@@ -65,7 +65,17 @@ class FakeClient:
         self.calls.append(
             ("investigate_tree", (tree_id, c_from, c_to, p_from, p_to), kwargs)
         )
-        return {"tree_id": tree_id, "agent": {"recommended_next_steps": []}}
+        return {
+            "tree_id": tree_id,
+            "agent": {
+                "recommended_next_steps": [
+                    {
+                        "command": "qluent trees compare revenue orders --period 'last 7 days'",
+                        "why": "Compare a metric.",
+                    }
+                ]
+            },
+        }
 
     def root_cause_tree(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
         self.calls.append(
@@ -100,6 +110,24 @@ def test_filters_from_arg_accepts_dict_list_and_none():
     assert _filters_from_arg({"region": ["EU", "US"]}) == {"region": ["EU", "US"]}
     assert _filters_from_arg({"region": "EU"}) == {"region": ["EU"]}
     assert _filters_from_arg(["region=EU", "region=US"]) == {"region": ["EU", "US"]}
+
+
+def test_filter_schema_advertises_dict_and_list_forms():
+    analyze = next(tool for tool in _tool_definitions() if tool["name"] == "qluent_rca_analyze")
+    filters = analyze["inputSchema"]["properties"]["filters"]
+    assert filters["anyOf"] == [
+        {
+            "type": "object",
+            "additionalProperties": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        },
+        {
+            "type": "array",
+            "items": {"type": "string"},
+        },
+    ]
 
 
 def test_dispatch_list_trees_returns_canned_payload():
@@ -177,6 +205,21 @@ def test_dispatch_investigate_forwards_rca_options():
     assert kwargs["max_branching"] == 3
 
 
+def test_dispatch_investigate_sanitizes_recommended_commands():
+    client = FakeClient()
+    result = asyncio.run(
+        dispatch_tool(
+            "qluent_investigate",
+            {"tree_id": "revenue", "period": "last 7 days"},
+            client=client,
+            config=CONFIG,
+        )
+    )
+    step = result["agent"]["recommended_next_steps"][0]
+    assert step["command"].startswith("qluent rca analyze revenue --metric orders")
+    assert "Converted from compare" in step["why"]
+
+
 def test_dispatch_deep_dive_iterates_all_trees_when_none_specified():
     client = FakeClient()
     result = asyncio.run(
@@ -190,6 +233,8 @@ def test_dispatch_deep_dive_iterates_all_trees_when_none_specified():
     assert result["trees_requested"] == ["revenue"]
     assert "revenue" in result["trees"]
     assert result["errors"] == {}
+    step = result["trees"]["revenue"]["agent"]["recommended_next_steps"][0]
+    assert step["command"].startswith("qluent rca analyze revenue --metric orders")
 
 
 def test_dispatch_deep_dive_rejects_unknown_tree_ids():
@@ -319,6 +364,26 @@ def test_call_tool_handler_invokes_qluent_client_end_to_end(monkeypatch):
     text = call_result.content[0].text
     payload = json.loads(text)
     assert payload == TREE_DATA
+
+
+def test_call_tool_handler_returns_setup_errors_as_text(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.mcp_server.load_config",
+        lambda: (_ for _ in ()).throw(SystemExit("No API key configured.")),
+    )
+
+    from mcp import types
+
+    server = build_server()
+    call_handler = server.request_handlers[types.CallToolRequest]
+
+    request = types.CallToolRequest(
+        method="tools/call",
+        params=types.CallToolRequestParams(name="qluent_list_trees", arguments={}),
+    )
+    server_result = asyncio.run(call_handler(request))
+    call_result = server_result.root
+    assert call_result.content[0].text == "Error: No API key configured."
 
 
 def test_qluent_mcp_serve_command_is_registered():

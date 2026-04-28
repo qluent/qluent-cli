@@ -18,6 +18,7 @@ from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.rca_contracts import enrich_rca_output
 from qluent_cli.suggestions import build_suggestions
+from qluent_cli.trees import _collect_tree_metadata, _sanitize_recommended_next_steps
 from qluent_cli.utils import parse_filters, resolve_date_args
 
 
@@ -55,6 +56,37 @@ def _resolve_dates(
     return resolve_date_args(period, current_range, compare_range)
 
 
+def _filter_schema() -> dict[str, Any]:
+    return {
+        "anyOf": [
+            {
+                "type": "object",
+                "additionalProperties": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+        ],
+        "description": (
+            "Filters as either a dimension -> values map or a list of "
+            "'dimension=value' strings."
+        ),
+    }
+
+
+def _sanitize_bundle(bundle: dict[str, Any], trees_data: dict[str, Any]) -> None:
+    available_tree_ids, metrics_by_tree = _collect_tree_metadata(trees_data)
+    _sanitize_recommended_next_steps(
+        bundle,
+        available_tree_ids=available_tree_ids,
+        metrics_by_tree=metrics_by_tree,
+    )
+
+
 def _tool_definitions() -> list[dict[str, Any]]:
     """Static tool schemas. Inputs mirror the CLI flags 1:1 where possible."""
     period_props = {
@@ -81,12 +113,7 @@ def _tool_definitions() -> list[dict[str, Any]]:
             "description": "Dimensions to consider for segment RCA.",
         },
         "filters": {
-            "type": "object",
-            "additionalProperties": {
-                "type": "array",
-                "items": {"type": "string"},
-            },
-            "description": "Map of dimension -> list of allowed values.",
+            **_filter_schema(),
         },
         "max_depth": {"type": "integer", "minimum": 1, "maximum": 6, "default": 3},
         "max_branches": {"type": "integer", "minimum": 1, "maximum": 10, "default": 2},
@@ -266,7 +293,7 @@ async def _investigate(client: QluentClient, _config: QluentConfig, args: dict[s
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
-    return client.investigate_tree(
+    bundle = client.investigate_tree(
         args["tree_id"],
         c_from,
         c_to,
@@ -283,6 +310,8 @@ async def _investigate(client: QluentClient, _config: QluentConfig, args: dict[s
         max_segments=int(args.get("max_segments", 5)),
         min_contribution_share=float(args.get("min_contribution_share", 0.1)),
     )
+    _sanitize_bundle(bundle, client.list_trees())
+    return bundle
 
 
 async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
@@ -308,7 +337,7 @@ async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str
     errors: dict[str, str] = {}
     for tid in targets:
         try:
-            results[tid] = client.investigate_tree(
+            bundle = client.investigate_tree(
                 tid,
                 c_from,
                 c_to,
@@ -322,6 +351,8 @@ async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str
                 max_segments=int(args.get("max_segments", 5)),
                 min_contribution_share=float(args.get("min_contribution_share", 0.1)),
             )
+            _sanitize_bundle(bundle, trees_data)
+            results[tid] = bundle
         except Exception as exc:
             errors[tid] = f"{type(exc).__name__}: {exc}"
 
@@ -458,11 +489,14 @@ def build_server() -> Any:
 
     @server.call_tool()
     async def _call(name: str, arguments: dict[str, Any]) -> list[Any]:
-        config = load_config()
-        client = QluentClient(config)
         try:
+            config = load_config()
+            client = QluentClient(config)
             payload = await dispatch_tool(name, arguments or {}, client=client, config=config)
-        except ValueError as exc:
+        except SystemExit as exc:
+            message = str(exc) or f"exit {exc.code}"
+            return [types.TextContent(type="text", text=f"Error: {message}")]
+        except Exception as exc:
             return [types.TextContent(type="text", text=f"Error: {exc}")]
         return [types.TextContent(type="text", text=json.dumps(payload, indent=2))]
 

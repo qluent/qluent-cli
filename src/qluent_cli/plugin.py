@@ -12,6 +12,8 @@ import subprocess
 
 import click
 
+from qluent_cli.output import echo_status
+
 MARKETPLACE_SOURCE = "qluent/qluent-plugin-cc"
 MARKETPLACE_NAME = "qluent-metric-trees"
 PLUGIN_ID = f"qluent@{MARKETPLACE_NAME}"
@@ -47,9 +49,9 @@ def _run_steps(steps: tuple[list[str], ...]) -> bool:
     for cmd in steps:
         ok, message = _run(cmd)
         if not ok:
-            click.echo(f"  Failed: {' '.join(cmd[1:])}", err=True)
+            echo_status(f"  Failed: {' '.join(cmd[1:])}")
             if message:
-                click.echo(f"  {message}", err=True)
+                echo_status(f"  {message}")
             return False
     return True
 
@@ -99,9 +101,9 @@ def offer_claude_plugin_install(install_plugin: bool | None) -> None:
 
     if not claude_cli_available():
         if install_plugin is True:
-            click.echo(_manual_hint())
+            echo_status(_manual_hint())
         else:
-            click.echo("Claude Code CLI not detected. " + _manual_hint())
+            echo_status("Claude Code CLI not detected. " + _manual_hint())
         return
 
     if install_plugin is None:
@@ -111,4 +113,4 @@ def offer_claude_plugin_install(install_plugin: bool | None) -> None:
             return
 
     if install_claude_plugin():
-        click.echo(f"Claude Code plugin ready: {PLUGIN_ID}")
+        echo_status(f"Claude Code plugin ready: {PLUGIN_ID}")

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import threading
+import time
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -10,6 +13,8 @@ from qluent_cli.config import QluentConfig
 
 
 _INVESTIGATE_TIMEOUT = 300.0
+_PROGRESS_INTERVAL_SECONDS = 30.0
+ProgressCallback = Callable[[str, float], None]
 
 
 class QluentClient:
@@ -128,6 +133,7 @@ class QluentClient:
         max_branching: int = 2,
         max_segments: int = 5,
         min_contribution_share: float = 0.1,
+        progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         """Run a full server-side investigation bundle."""
         body = self._rca_body(
@@ -142,13 +148,39 @@ class QluentClient:
             "trend_as_of": trend_as_of,
             "compare_trees": compare_trees or [],
         })
-        resp = self._client.post(
+        resp = self._post_with_progress(
             f"{self._base}/metric-trees/{tree_id}/investigate/",
             json=body,
             timeout=_INVESTIGATE_TIMEOUT,
+            progress_callback=progress_callback,
         )
         resp.raise_for_status()
         return resp.json()
+
+    def _post_with_progress(
+        self,
+        url: str,
+        *,
+        json: dict[str, Any],
+        timeout: float,
+        progress_callback: ProgressCallback | None,
+    ) -> httpx.Response:
+        if progress_callback is None:
+            return self._client.post(url, json=json, timeout=timeout)
+
+        started = time.monotonic()
+        done = threading.Event()
+
+        def tick() -> None:
+            while not done.wait(_PROGRESS_INTERVAL_SECONDS):
+                progress_callback("awaiting_api", time.monotonic() - started)
+
+        thread = threading.Thread(target=tick, daemon=True)
+        thread.start()
+        try:
+            return self._client.post(url, json=json, timeout=timeout)
+        finally:
+            done.set()
 
     def root_cause_tree(
         self,

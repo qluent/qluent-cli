@@ -13,9 +13,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
-import click
-
 from qluent_cli.config import is_local_url
+from qluent_cli.output import echo_status
 
 LOGIN_TIMEOUT_SECONDS = 300  # 5 minutes
 LOGIN_PATH = "/cli-auth"
@@ -265,10 +264,10 @@ def browser_login(api_url: str) -> CallbackResult:
     server_thread.start()
 
     try:
-        click.echo("Opening browser to log in...")
+        echo_status("Opening browser to log in...")
         webbrowser.open(login_url)
-        click.echo(f"If the browser did not open, visit:\n\n  {login_url}\n")
-        click.echo("Waiting for login...")
+        echo_status(f"If the browser did not open, visit:\n\n  {login_url}\n")
+        echo_status("Waiting for login...")
 
         got_it = server.got_callback.wait(timeout=LOGIN_TIMEOUT_SECONDS)
         if not got_it:

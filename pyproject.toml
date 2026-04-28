@@ -27,4 +27,4 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-qluent_cli = ["claude_instructions.md"]
+qluent_cli = ["agent_instructions.md"]

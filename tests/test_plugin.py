@@ -146,7 +146,7 @@ def test_login_no_install_plugin_skips(
 
 def test_login_prompt_declined(monkeypatch, isolated_config, fake_browser_login, tmp_path):
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "CLAUDE.md").write_text("existing content")
+    (tmp_path / "AGENTS.md").write_text("existing content")
     called = []
     monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
     monkeypatch.setattr(
@@ -155,7 +155,7 @@ def test_login_prompt_declined(monkeypatch, isolated_config, fake_browser_login,
         lambda: called.append("ran") or True,
     )
 
-    # First "n" declines CLAUDE.md overwrite (we created one above),
+    # First "n" declines AGENTS.md overwrite (we created one above),
     # second "n" declines plugin install.
     result = CliRunner().invoke(cli, ["login"], input="n\nn\n")
 

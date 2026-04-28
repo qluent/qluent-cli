@@ -239,25 +239,44 @@ def config(
     _print_saved_config(result)
 
 
-def _write_claude_file(path: Path, *, force: bool) -> str:
-    content = _load_claude_instructions().strip() + "\n"
+CLAUDE_POINTER_BODY = (
+    "@AGENTS.md\n"
+    "\n"
+    "# Claude Code\n"
+    "\n"
+    "This file imports the shared qluent CLI usage guide from AGENTS.md.\n"
+)
+
+
+def _agent_file_content(kind: str) -> str:
+    if kind == "claude-pointer":
+        return CLAUDE_POINTER_BODY
+    return _load_agent_instructions().strip() + "\n"
+
+
+def _write_agent_file(path: Path, *, force: bool, kind: str = "agents") -> str:
+    content = _agent_file_content(kind)
     if path.exists():
         existing = path.read_text()
         if existing == content:
             return f"{path} is already up to date"
         if not force:
-            raise click.ClickException(f"{path} already exists. Re-run with --force to overwrite it.")
+            raise click.ClickException(
+                f"{path} already exists. Re-run with --force to overwrite it."
+            )
     path.write_text(content)
     return f"Wrote {path}"
 
 
-def _confirm_and_write_claude_file(target: Path, *, force: bool) -> None:
-    """Prompt to overwrite if needed, then write CLAUDE.md."""
+def _confirm_and_write_agent_file(
+    target: Path, *, force: bool, kind: str = "agents"
+) -> None:
+    """Prompt to overwrite if needed, then write the agent instructions file."""
     if target.exists() and not force:
         if not click.confirm(f"{target} already exists. Overwrite it?", default=False):
-            echo_status("Skipped CLAUDE.md generation")
+            echo_status(f"Skipped {target.name} generation")
             return
-    echo_status(_write_claude_file(target, force=force or target.exists()))
+    echo_status(_write_agent_file(target, force=force or target.exists(), kind=kind))
 
 
 @cli.command()
@@ -305,23 +324,32 @@ def login(local: bool, install_plugin: bool | None) -> None:
     echo_status(f"  Email:   {result.user_email}")
     echo_status(CONFIG_SAVED_MSG)
 
-    _confirm_and_write_claude_file(Path("CLAUDE.md"), force=False)
+    _confirm_and_write_agent_file(Path("AGENTS.md"), force=False)
     offer_claude_plugin_install(install_plugin)
 
 
 @cli.command()
 @click.option(
-    "--claude-path",
-    default="CLAUDE.md",
+    "--path",
+    "agents_path",
+    default="AGENTS.md",
     show_default=True,
-    help="Where to write the Claude Code instructions file.",
+    help="Where to write the agent instructions file.",
+)
+@click.option(
+    "--claude-path",
+    "claude_path",
+    hidden=True,
+    help="Deprecated alias for --path.",
 )
 @click.option(
     "--local",
     is_flag=True,
     help="Use the local API at http://localhost:8001.",
 )
-@click.option("--force", is_flag=True, help="Overwrite an existing CLAUDE.md without prompting.")
+@click.option(
+    "--force", is_flag=True, help="Overwrite an existing instructions file without prompting."
+)
 @click.option(
     "--install-plugin/--no-install-plugin",
     "install_plugin",
@@ -329,7 +357,11 @@ def login(local: bool, install_plugin: bool | None) -> None:
     help="Install the qluent Claude Code plugin without prompting (or skip the prompt).",
 )
 def setup(
-    claude_path: str, local: bool, force: bool, install_plugin: bool | None
+    agents_path: str,
+    claude_path: str | None,
+    local: bool,
+    force: bool,
+    install_plugin: bool | None,
 ) -> None:
     """Interactive first-run setup for client installations."""
     echo_status("Tip: Use 'qluent login' for browser-based login (recommended).\n")
@@ -374,15 +406,15 @@ def setup(
     echo_status(CONFIG_SAVED_MSG)
     _print_saved_config(result)
 
-    target = Path(claude_path)
-    write_claude = click.confirm(
-        f"Write Claude Code instructions to {target}?",
+    target = Path(claude_path or agents_path)
+    write_agents = click.confirm(
+        f"Write {target}?",
         default=True,
     )
-    if write_claude:
-        _confirm_and_write_claude_file(target, force=force)
+    if write_agents:
+        _confirm_and_write_agent_file(target, force=force)
     else:
-        echo_status("Skipped CLAUDE.md generation")
+        echo_status(f"Skipped {target.name} generation")
 
     offer_claude_plugin_install(install_plugin)
 
@@ -392,18 +424,78 @@ cli.add_command(rca)
 cli.add_command(elasticity)
 cli.add_command(suggestions)
 
-INSTRUCTIONS_FILENAME = "claude_instructions.md"
+INSTRUCTIONS_FILENAME = "agent_instructions.md"
 
 
-def _load_claude_instructions() -> str:
+def _load_agent_instructions() -> str:
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
     return (base / INSTRUCTIONS_FILENAME).read_text()
 
 
 @cli.command()
 def instructions() -> None:
-    """Print a CLAUDE.md snippet for Claude Code integration."""
-    click.echo(_load_claude_instructions())
+    """Print the bundled AGENTS.md snippet for agent integrations."""
+    click.echo(_load_agent_instructions())
+
+
+def _agents_init_impl(*, as_kind: str, target_path: str | None, force: bool) -> None:
+    if as_kind == "agents":
+        path = Path(target_path or "AGENTS.md")
+        echo_status(_write_agent_file(path, force=force, kind="agents"))
+        return
+
+    if as_kind == "claude":
+        path = Path(target_path or "CLAUDE.md")
+        echo_status(_write_agent_file(path, force=force, kind="agents"))
+        return
+
+    if as_kind == "both":
+        if target_path:
+            raise click.ClickException(
+                "--path is incompatible with --as both. Run twice with --as agents and "
+                "--as claude if you need custom paths."
+            )
+        echo_status(_write_agent_file(Path("AGENTS.md"), force=force, kind="agents"))
+        echo_status(
+            _write_agent_file(Path("CLAUDE.md"), force=force, kind="claude-pointer")
+        )
+        return
+
+    raise click.ClickException(
+        f"Unknown --as value: {as_kind}. Use one of: agents, claude, both."
+    )
+
+
+@cli.group()
+def agents() -> None:
+    """Agent integration helpers (AGENTS.md, CLAUDE.md, ...)."""
+
+
+@agents.command("init")
+@click.option(
+    "--as",
+    "as_kind",
+    type=click.Choice(["agents", "claude", "both"]),
+    default="agents",
+    show_default=True,
+    help=(
+        "Which file flavor to write. 'agents' = AGENTS.md, 'claude' = CLAUDE.md "
+        "with the same content, 'both' = AGENTS.md plus a tiny CLAUDE.md pointer."
+    ),
+)
+@click.option(
+    "--path",
+    "target_path",
+    default=None,
+    help="Where to write the file (defaults: AGENTS.md or CLAUDE.md depending on --as).",
+)
+@click.option("--force", is_flag=True, help="Overwrite an existing file without prompting.")
+def agents_init(as_kind: str, target_path: str | None, force: bool) -> None:
+    """Write an agent instructions file (AGENTS.md by default)."""
+    _agents_init_impl(as_kind=as_kind, target_path=target_path, force=force)
+
+
+cli.add_command(agents)
 
 
 @cli.group()
@@ -412,11 +504,17 @@ def claude() -> None:
 
 
 @claude.command("init")
-@click.option("--path", "target_path", default="CLAUDE.md", show_default=True, help="Path to write CLAUDE.md")
+@click.option(
+    "--path",
+    "target_path",
+    default="CLAUDE.md",
+    show_default=True,
+    help="Path to write CLAUDE.md",
+)
 @click.option("--force", is_flag=True, help="Overwrite an existing CLAUDE.md")
 def claude_init(target_path: str, force: bool) -> None:
-    """Write a CLAUDE.md file for Claude Code."""
-    echo_status(_write_claude_file(Path(target_path), force=force))
+    """Alias for `qluent agents init --as claude` (writes CLAUDE.md)."""
+    _agents_init_impl(as_kind="claude", target_path=target_path, force=force)
 
 
 @claude.command("update")
@@ -464,6 +562,7 @@ def mcp_serve() -> None:
 
 
 cli.add_command(mcp)
+
 
 if __name__ == "__main__":
     cli()

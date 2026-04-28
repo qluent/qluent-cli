@@ -35,7 +35,7 @@ qluent login --local
 
 Hosted API URLs default to client-safe mode automatically. Localhost URLs default to full-access mode for development.
 
-## Claude Code Setup
+## Agent Setup (Claude Code, Codex CLI, Cursor, Continue, Zed)
 
 The easiest path is:
 
@@ -46,10 +46,21 @@ qluent login
 Or, if config is already present:
 
 ```bash
-qluent claude init
+qluent agents init                # writes AGENTS.md (default — read by Codex CLI, Cursor, Continue, Zed)
+qluent agents init --as claude    # writes CLAUDE.md instead
+qluent agents init --as both      # writes AGENTS.md + a tiny CLAUDE.md importer
 ```
 
-That writes `CLAUDE.md` in the current directory so Claude Code can use the CLI correctly.
+The bundled instructions are agent-neutral and explain how to call the qluent
+CLI and interpret its JSON output. `qluent claude init` is kept as a thin alias
+for `qluent agents init --as claude` for back-compat.
+
+### Local override
+
+If a project needs to customize the bundled instructions without forking the
+CLI, drop an `AGENTS.override.md` in the same directory. Codex CLI (and other
+clients that follow the convention) prefer it over `AGENTS.md` for that run.
+`qluent agents init` never writes to or overwrites `AGENTS.override.md`.
 
 ## First Commands
 

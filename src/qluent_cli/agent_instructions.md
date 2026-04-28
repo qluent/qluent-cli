@@ -29,10 +29,10 @@ for reproducible bundled trend analysis.
 Supported periods: "last week", "this week", "last month", "this month", "last quarter",
 "yesterday", "last 30 days", "week over week", "month over month", or explicit ISO dates.
 
-## Preferred Claude Code workflow
+## Preferred agent workflow
 
 **Pick a tree, then `investigate`.** The qluent server is deterministic and does
-not match natural-language questions to trees — Claude must select the tree
+not match natural-language questions to trees — the agent must select the tree
 client-side and pass it as an explicit positional argument.
 
 If the user already named the tree (e.g. "investigate revenue last week"), run:
@@ -82,7 +82,7 @@ Read the investigation bundle in this order:
 
 Use these rules:
 
-- Prefer `--json-output` when Claude Code is driving the workflow.
+- Prefer `--json-output` when an agent is driving the workflow.
 - If `agent.status = needs_more_data` or `partially_resolved`, run the first relevant command from `agent.recommended_next_steps` before inventing your own drill-down.
 - If `agent.status = resolved`, summarize the evidence and stop unless the user explicitly wants a deeper drill-down.
 - Always report the exact current and comparison windows you used.
@@ -194,3 +194,14 @@ Interpret them like this:
 Conclusion: "Revenue growth is decelerating. Last week's gain came from higher basket sizes
 in owned channels (Direct, Email), not from customer acquisition. Organic traffic continues
 to decline — investigate SEO or content changes."
+
+## Agent-specific notes
+
+For Claude Code: the qluent plugin exposes `/investigate`, `/trend`, `/compare-trees`, and
+`/rca` slash commands that wrap the workflow above. Prefer those over manually chaining the
+underlying CLI commands.
+
+For Codex CLI / Cursor / Continue / Zed (and any other MCP client): run `qluent mcp serve`
+and connect via the [Model Context Protocol](https://modelcontextprotocol.io). The MCP tools
+return the same JSON contracts as the CLI's `--json-output` mode, so the workflow rules
+above apply unchanged.

@@ -290,7 +290,6 @@ def test_is_older_compares_dotted_versions():
     assert plugin_module._is_older("0.3.0", "0.3.0") is False
     assert plugin_module._is_older("0.4.0", "0.3.0") is False
     assert plugin_module._is_older("0.2", "0.2.1") is True
-    # Pre-release suffix is stripped before comparison.
     assert plugin_module._is_older("0.2.0-rc1", "0.3.0") is True
 
 

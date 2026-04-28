@@ -28,25 +28,36 @@ def claude_cli_available() -> bool:
 
 
 _STEP_TIMEOUT_SECONDS = 180
+_LIST_TIMEOUT_SECONDS = 10
 
 
-def _run(cmd: list[str]) -> tuple[bool, str]:
+def _exec(cmd: list[str], *, timeout: int = _STEP_TIMEOUT_SECONDS) -> tuple[int, str, str]:
+    """Run cmd and return (returncode, stdout, stderr).
+
+    Returncode is -1 with the error in stderr when the call timed out or the
+    binary was missing.
+    """
     try:
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
             check=False,
-            timeout=_STEP_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except subprocess.TimeoutExpired:
-        return False, f"timed out after {_STEP_TIMEOUT_SECONDS}s"
+        return -1, "", f"timed out after {timeout}s"
     except OSError as exc:
-        return False, str(exc)
-    if result.returncode != 0:
-        message = (result.stderr or result.stdout or "").strip()
-        return False, message or f"exit {result.returncode}"
-    return True, ""
+        return -1, "", str(exc)
+    return result.returncode, result.stdout, result.stderr
+
+
+def _run(cmd: list[str]) -> tuple[bool, str]:
+    rc, stdout, stderr = _exec(cmd)
+    if rc == 0:
+        return True, ""
+    message = (stderr or stdout or "").strip()
+    return False, message or f"exit {rc}"
 
 
 def _run_steps(steps: tuple[list[str], ...]) -> bool:
@@ -60,20 +71,11 @@ def _run_steps(steps: tuple[list[str], ...]) -> bool:
     return True
 
 
-def _capture(cmd: list[str]) -> str | None:
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=_STEP_TIMEOUT_SECONDS,
-        )
-    except (subprocess.TimeoutExpired, OSError):
+def _capture(cmd: list[str], *, timeout: int = _LIST_TIMEOUT_SECONDS) -> str | None:
+    rc, stdout, _ = _exec(cmd, timeout=timeout)
+    if rc != 0:
         return None
-    if result.returncode != 0:
-        return None
-    return result.stdout or ""
+    return stdout or ""
 
 
 def get_installed_claude_plugin_version() -> str | None:

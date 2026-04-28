@@ -9,6 +9,7 @@ import click
 
 from qluent_cli.elasticity import elasticity
 from qluent_cli.rca import rca
+from qluent_cli.suggestions import suggestions
 from qluent_cli.trees import trees
 
 
@@ -253,6 +254,7 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
 cli.add_command(trees)
 cli.add_command(rca)
 cli.add_command(elasticity)
+cli.add_command(suggestions)
 
 INSTRUCTIONS_FILENAME = "claude_instructions.md"
 

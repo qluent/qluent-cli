@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 
+from qluent_cli.client import QluentClient
+from qluent_cli.config import load_config
 from qluent_cli.elasticity import elasticity
+from qluent_cli.formatters import format_tree_list
 from qluent_cli.rca import rca
 from qluent_cli.trees import trees
 
@@ -42,6 +47,112 @@ def _prompt_required(
         if value:
             return value
         click.echo(f"{label} is required")
+
+
+def _tree_metric_labels(tree: dict[str, Any]) -> list[str]:
+    nodes = tree.get("nodes") or []
+    return [
+        str(node.get("label") or node.get("id"))
+        for node in nodes
+        if node.get("kind") == "sql_metric" and (node.get("label") or node.get("id"))
+    ]
+
+
+def _build_status_payload() -> dict[str, Any]:
+    try:
+        config = load_config()
+    except SystemExit as exc:
+        return {
+            "connected": False,
+            "error": str(exc),
+            "login_command": "qluent login",
+        }
+
+    client = QluentClient(config)
+    trees_data = client.list_trees()
+    normalized_trees = []
+    for tree in trees_data.get("trees", []):
+        normalized_trees.append(
+            {
+                "id": tree.get("id"),
+                "label": tree.get("label") or tree.get("id"),
+                "description": tree.get("description"),
+                "metrics": _tree_metric_labels(tree),
+            }
+        )
+
+    first_tree = normalized_trees[0]["id"] if normalized_trees else "<tree_id>"
+    return {
+        "connected": True,
+        "project": {
+            "uuid": config.project_uuid,
+            "api_url": config.api_url,
+            "user_email": config.user_email,
+            "client_safe": config.client_safe,
+        },
+        "trees": normalized_trees,
+        "suggested_first_command": (
+            f'qluent trees investigate {first_tree} --period "last month" --json-output'
+        ),
+    }
+
+
+def _format_status(payload: dict[str, Any]) -> str:
+    if not payload.get("connected"):
+        lines = ["Not connected to Qluent"]
+        if payload.get("error"):
+            lines.extend(["", str(payload["error"])])
+        lines.extend(["", "Run: qluent login"])
+        return "\n".join(lines)
+
+    project = payload["project"]
+    lines = [
+        "Connected to Qluent",
+        "",
+        "Project",
+        f"  UUID: {project['uuid']}",
+        f"  API: {project['api_url']}",
+        f"  User: {project['user_email']}",
+        f"  Client safe: {project['client_safe']}",
+        "",
+        "Available trees",
+    ]
+    trees_payload = {"trees": payload.get("trees", [])}
+    if payload.get("trees"):
+        for tree in trees_payload["trees"]:
+            metrics = ", ".join(tree.get("metrics") or [])
+            detail = f"  {tree['id']}"
+            if metrics:
+                detail += f"             {metrics}"
+            elif tree.get("label"):
+                detail += f"             {tree['label']}"
+            lines.append(detail)
+    else:
+        lines.append(format_tree_list(trees_payload))
+    lines.extend(["", "Suggested first command", f"  {payload['suggested_first_command']}"])
+    return "\n".join(lines)
+
+
+def _print_status(as_json: bool) -> None:
+    payload = _build_status_payload()
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+    else:
+        click.echo(_format_status(payload))
+
+
+@cli.command()
+@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+def status(as_json: bool) -> None:
+    """Show the connected project, API environment, user, and available trees."""
+    _print_status(as_json)
+
+
+@cli.command()
+@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+def whoami(as_json: bool) -> None:
+    """Alias for status."""
+    _print_status(as_json)
 
 
 @cli.command()

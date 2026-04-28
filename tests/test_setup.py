@@ -97,3 +97,82 @@ def test_claude_init_requires_force_to_overwrite(monkeypatch, tmp_path):
 
     assert result.exit_code != 0
     assert "already exists" in result.output
+
+
+def test_status_outputs_connected_project_and_trees(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.main.load_config",
+        lambda: config_module.QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+
+    def mock_list_trees(self):
+        return {
+            "trees": [
+                {
+                    "id": "revenue",
+                    "label": "Revenue",
+                    "nodes": [
+                        {"id": "net_revenue", "label": "Net Revenue", "kind": "sql_metric"},
+                        {"id": "orders", "label": "Orders", "kind": "sql_metric"},
+                    ],
+                }
+            ]
+        }
+
+    monkeypatch.setattr("qluent_cli.main.QluentClient.list_trees", mock_list_trees)
+
+    result = CliRunner().invoke(cli, ["status"])
+
+    assert result.exit_code == 0
+    assert "Connected to Qluent" in result.output
+    assert "UUID: project-123" in result.output
+    assert "API: https://api.example.com" in result.output
+    assert "User: user@example.com" in result.output
+    assert "revenue" in result.output
+    assert "Net Revenue, Orders" in result.output
+    assert 'qluent trees investigate revenue --period "last month" --json-output' in result.output
+
+
+def test_whoami_json_outputs_agent_friendly_status(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.main.load_config",
+        lambda: config_module.QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+            client_safe=True,
+        ),
+    )
+    monkeypatch.setattr("qluent_cli.main.QluentClient.list_trees", lambda self: {"trees": []})
+
+    result = CliRunner().invoke(cli, ["whoami", "--json-output"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["connected"] is True
+    assert payload["project"] == {
+        "uuid": "project-123",
+        "api_url": "https://api.example.com",
+        "user_email": "user@example.com",
+        "client_safe": True,
+    }
+    assert payload["trees"] == []
+
+
+def test_status_explains_login_when_not_configured(monkeypatch):
+    def missing_config():
+        raise SystemExit("No API key configured. Run: qluent login")
+
+    monkeypatch.setattr("qluent_cli.main.load_config", missing_config)
+
+    result = CliRunner().invoke(cli, ["status"])
+
+    assert result.exit_code == 0
+    assert "Not connected to Qluent" in result.output
+    assert "Run: qluent login" in result.output

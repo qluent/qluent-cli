@@ -437,5 +437,14 @@ def claude_update() -> None:
 
 cli.add_command(claude)
 
+
+def main() -> None:
+    """Entry point that wraps ``cli`` with usage tracking."""
+    from qluent_cli.telemetry import track_lifecycle
+
+    with track_lifecycle(sys.argv[1:]):
+        cli()
+
+
 if __name__ == "__main__":
-    cli()
+    main()

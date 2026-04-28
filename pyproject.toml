@@ -16,7 +16,7 @@ build = [
 ]
 
 [project.scripts]
-qluent = "qluent_cli.main:cli"
+qluent = "qluent_cli.main:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

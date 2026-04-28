@@ -1,5 +1,5 @@
 """Allow running as `python -m qluent_cli`."""
 
-from qluent_cli.main import cli
+from qluent_cli.main import main
 
-cli()
+main()

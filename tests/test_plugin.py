@@ -71,7 +71,7 @@ def test_offer_install_prints_hint_when_claude_missing(monkeypatch, capsys):
 def test_install_claude_plugin_runs_both_steps(monkeypatch):
     commands = []
 
-    def fake_run(cmd, capture_output, text, check):
+    def fake_run(cmd, **_kwargs):
         commands.append(cmd)
         return _completed()
 
@@ -85,7 +85,7 @@ def test_install_claude_plugin_runs_both_steps(monkeypatch):
 
 
 def test_install_claude_plugin_returns_false_on_step_failure(monkeypatch, capsys):
-    def fake_run(cmd, capture_output, text, check):
+    def fake_run(cmd, **_kwargs):
         return _completed(returncode=1, stderr="boom")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -94,6 +94,17 @@ def test_install_claude_plugin_returns_false_on_step_failure(monkeypatch, capsys
     err = capsys.readouterr().err
     assert "Failed: plugin marketplace add" in err
     assert "boom" in err
+
+
+def test_install_claude_plugin_returns_false_on_timeout(monkeypatch, capsys):
+    def fake_run(cmd, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=plugin_module._STEP_TIMEOUT_SECONDS)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert plugin_module.install_claude_plugin() is False
+    err = capsys.readouterr().err
+    assert "timed out" in err
 
 
 def test_login_install_plugin_flag_invokes_install(monkeypatch, isolated_config, fake_browser_login):
@@ -147,7 +158,7 @@ def test_login_prompt_declined(monkeypatch, isolated_config, fake_browser_login)
 def test_update_claude_plugin_runs_both_steps(monkeypatch):
     commands = []
 
-    def fake_run(cmd, capture_output, text, check):
+    def fake_run(cmd, **_kwargs):
         commands.append(cmd)
         return _completed()
 
@@ -161,7 +172,7 @@ def test_update_claude_plugin_runs_both_steps(monkeypatch):
 
 
 def test_update_claude_plugin_returns_false_on_step_failure(monkeypatch, capsys):
-    def fake_run(cmd, capture_output, text, check):
+    def fake_run(cmd, **_kwargs):
         return _completed(returncode=1, stderr="network down")
 
     monkeypatch.setattr(subprocess, "run", fake_run)

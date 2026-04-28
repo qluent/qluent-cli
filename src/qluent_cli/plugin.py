@@ -21,9 +21,20 @@ def claude_cli_available() -> bool:
     return shutil.which("claude") is not None
 
 
+_STEP_TIMEOUT_SECONDS = 180
+
+
 def _run(cmd: list[str]) -> tuple[bool, str]:
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=_STEP_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"timed out after {_STEP_TIMEOUT_SECONDS}s"
     except OSError as exc:
         return False, str(exc)
     if result.returncode != 0:

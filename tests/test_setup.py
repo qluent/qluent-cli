@@ -143,10 +143,10 @@ def test_agents_init_as_both_writes_agents_and_claude_pointer(monkeypatch, tmp_p
     claude_md = tmp_path / "CLAUDE.md"
     assert agents_md.exists()
     assert claude_md.exists()
-    # AGENTS.md gets the full instructions; CLAUDE.md is a tiny pointer.
+    # AGENTS.md gets the full instructions; CLAUDE.md imports it for Claude Code.
     assert "Shapley" in agents_md.read_text()
     pointer = claude_md.read_text()
-    assert "See [AGENTS.md](AGENTS.md)" in pointer
+    assert pointer.startswith("@AGENTS.md\n")
     assert "Shapley" not in pointer
 
 
@@ -173,6 +173,35 @@ def test_agents_init_as_both_rejects_custom_path(monkeypatch, tmp_path):
 
     assert result.exit_code != 0
     assert "incompatible" in result.output
+
+
+def test_setup_accepts_deprecated_claude_path_alias(
+    monkeypatch, isolated_config, tmp_path
+):
+    _config_dir, _config_file = isolated_config
+    monkeypatch.chdir(tmp_path)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "setup",
+            "--no-install-plugin",
+            "--claude-path",
+            "CUSTOM_CLAUDE.md",
+        ],
+        input=(
+            "qk_test\n"
+            "project-123\n"
+            "user@example.com\n"
+            "\n"
+        ),
+    )
+
+    assert result.exit_code == 0
+    custom_path = tmp_path / "CUSTOM_CLAUDE.md"
+    assert custom_path.exists()
+    assert "# Qluent Metric Trees" in custom_path.read_text()
+    assert not (tmp_path / "AGENTS.md").exists()
 
 
 def test_status_outputs_connected_project_and_trees(monkeypatch):

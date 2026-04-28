@@ -46,9 +46,9 @@ qluent login
 Or, if config is already present:
 
 ```bash
-qluent agents init                # writes AGENTS.md (default — read by Codex CLI, Cursor, Continue, Zed, Claude Code)
+qluent agents init                # writes AGENTS.md (default — read by Codex CLI, Cursor, Continue, Zed)
 qluent agents init --as claude    # writes CLAUDE.md instead
-qluent agents init --as both      # writes AGENTS.md + a tiny CLAUDE.md pointer
+qluent agents init --as both      # writes AGENTS.md + a tiny CLAUDE.md importer
 ```
 
 The bundled instructions are agent-neutral and explain how to call the qluent

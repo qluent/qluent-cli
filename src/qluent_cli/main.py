@@ -240,10 +240,11 @@ def config(
 
 
 CLAUDE_POINTER_BODY = (
-    "# Qluent Metric Trees\n"
+    "@AGENTS.md\n"
     "\n"
-    "See [AGENTS.md](AGENTS.md) for the full qluent CLI usage guide.\n"
-    "Claude Code reads `AGENTS.md` automatically, so this file just points there.\n"
+    "# Claude Code\n"
+    "\n"
+    "This file imports the shared qluent CLI usage guide from AGENTS.md.\n"
 )
 
 
@@ -336,6 +337,12 @@ def login(local: bool, install_plugin: bool | None) -> None:
     help="Where to write the agent instructions file.",
 )
 @click.option(
+    "--claude-path",
+    "claude_path",
+    hidden=True,
+    help="Deprecated alias for --path.",
+)
+@click.option(
     "--local",
     is_flag=True,
     help="Use the local API at http://localhost:8001.",
@@ -350,7 +357,11 @@ def login(local: bool, install_plugin: bool | None) -> None:
     help="Install the qluent Claude Code plugin without prompting (or skip the prompt).",
 )
 def setup(
-    agents_path: str, local: bool, force: bool, install_plugin: bool | None
+    agents_path: str,
+    claude_path: str | None,
+    local: bool,
+    force: bool,
+    install_plugin: bool | None,
 ) -> None:
     """Interactive first-run setup for client installations."""
     echo_status("Tip: Use 'qluent login' for browser-based login (recommended).\n")
@@ -395,7 +406,7 @@ def setup(
     echo_status(CONFIG_SAVED_MSG)
     _print_saved_config(result)
 
-    target = Path(agents_path)
+    target = Path(claude_path or agents_path)
     write_agents = click.confirm(
         f"Write {target}?",
         default=True,

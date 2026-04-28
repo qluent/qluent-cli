@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import os
+import random
+import sys
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -15,6 +20,116 @@ from qluent_cli.config import QluentConfig
 _INVESTIGATE_TIMEOUT = 300.0
 _PROGRESS_INTERVAL_SECONDS = 30.0
 ProgressCallback = Callable[[str, float], None]
+
+_RETRYABLE_STATUS = frozenset({408, 429, 502, 503, 504})
+_RETRYABLE_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.RemoteProtocolError,
+)
+_IDEMPOTENT_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+_DEFAULT_BACKOFF: tuple[float, ...] = (0.5, 1.5, 4.0)
+
+
+def _parse_retry_after(value: str) -> float | None:
+    """Parse an HTTP Retry-After header value (delta-seconds or HTTP-date)."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        dt = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return max(0.0, (dt - datetime.now(timezone.utc)).total_seconds())
+
+
+def _default_log(attempt: int, retries: int, reason: str, delay: float) -> None:
+    if os.environ.get("QLUENT_QUIET"):
+        return
+    sys.stderr.write(
+        f"[qluent] retry {attempt}/{retries} after {reason} in {delay:.1f}s\n"
+    )
+    sys.stderr.flush()
+
+
+class _RetryTransport(httpx.BaseTransport):
+    """Wraps an httpx transport with retries for transient failures.
+
+    Network exceptions (connect errors, read timeout) are retried on all
+    methods — at this layer no response bytes have been observed. Retryable
+    status codes are only retried on idempotent methods so a side-effecting
+    POST is never replayed after the server responded. Honors Retry-After
+    on 429/503.
+    """
+
+    def __init__(
+        self,
+        wrapped: httpx.BaseTransport,
+        *,
+        backoff: tuple[float, ...] = _DEFAULT_BACKOFF,
+        sleep: Callable[[float], None] = time.sleep,
+        log: Callable[[int, int, str, float], None] = _default_log,
+        jitter: Callable[[float], float] | None = None,
+    ) -> None:
+        self._wrapped = wrapped
+        self._backoff = backoff
+        self._sleep = sleep
+        self._log = log
+        self._jitter = jitter if jitter is not None else _default_jitter
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        retries = len(self._backoff)
+        is_idempotent = request.method.upper() in _IDEMPOTENT_METHODS
+
+        for attempt in range(retries + 1):
+            try:
+                response = self._wrapped.handle_request(request)
+            except _RETRYABLE_EXCEPTIONS as exc:
+                if attempt >= retries:
+                    raise
+                delay = self._jitter(self._backoff[attempt])
+                self._log(attempt + 1, retries, type(exc).__name__, delay)
+                self._sleep(delay)
+                continue
+
+            if response.status_code not in _RETRYABLE_STATUS:
+                return response
+            if not is_idempotent:
+                return response
+            if attempt >= retries:
+                return response
+
+            retry_after = response.headers.get("Retry-After")
+            base = _parse_retry_after(retry_after) if retry_after else None
+            if base is None:
+                delay = self._jitter(self._backoff[attempt])
+            else:
+                delay = base
+            self._log(attempt + 1, retries, str(response.status_code), delay)
+            response.close()
+            self._sleep(delay)
+
+        return response  # pragma: no cover
+
+    def close(self) -> None:
+        self._wrapped.close()
+
+
+def _default_jitter(base: float) -> float:
+    return base * random.uniform(0.7, 1.3)
+
+
+def _build_transport() -> httpx.BaseTransport:
+    return _RetryTransport(httpx.HTTPTransport())
 
 
 class QluentClient:
@@ -31,6 +146,7 @@ class QluentClient:
         self._client = httpx.Client(
             headers=headers,
             timeout=120.0,
+            transport=_build_transport(),
         )
 
     def _window_body(

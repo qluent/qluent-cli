@@ -564,5 +564,171 @@ def mcp_serve() -> None:
 cli.add_command(mcp)
 
 
+@cli.group()
+def runs() -> None:
+    """Inspect, replay, and prune persisted investigate / deep-dive runs."""
+
+
+def _format_runs_table(records: list[Any]) -> str:
+    if not records:
+        return "No persisted runs."
+    rows = [("RUN_ID", "STARTED", "COMMAND", "TREE", "PERIOD")]
+    for r in records:
+        period = "-"
+        if r.period_start and r.period_end:
+            period = f"{r.period_start}..{r.period_end}"
+        rows.append(
+            (
+                r.run_id,
+                r.started_at,
+                r.command,
+                r.tree_id or "*",
+                period,
+            )
+        )
+    widths = [max(len(row[i]) for row in rows) for i in range(len(rows[0]))]
+    return "\n".join(
+        "  ".join(value.ljust(widths[i]) for i, value in enumerate(row))
+        for row in rows
+    )
+
+
+@runs.command("list")
+@click.option("--tree", "tree_id", default=None, help="Filter to a specific tree id.")
+@click.option(
+    "--command",
+    "command_filter",
+    default=None,
+    type=click.Choice(["trees investigate", "trees deep-dive"]),
+    help="Filter by command kind.",
+)
+@click.option(
+    "--since",
+    default=None,
+    help="Only runs started within this duration (e.g. '7d', '30d', '7 days ago').",
+)
+@click.option("--limit", default=None, type=click.IntRange(1, 1000), help="Cap the result count.")
+@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+def runs_list(
+    tree_id: str | None,
+    command_filter: str | None,
+    since: str | None,
+    limit: int | None,
+    as_json: bool,
+) -> None:
+    """List persisted runs newest-first."""
+    from qluent_cli import sessions
+
+    try:
+        records = sessions.list_runs(
+            tree_id=tree_id,
+            command=command_filter,
+            since=since,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+
+    if as_json:
+        payload = [
+            {
+                "run_id": r.run_id,
+                "command": r.command,
+                "tree_id": r.tree_id,
+                "period_start": r.period_start,
+                "period_end": r.period_end,
+                "comparison_start": r.comparison_start,
+                "comparison_end": r.comparison_end,
+                "started_at": r.started_at,
+                "profile": r.profile,
+                "client_safe": r.client_safe,
+                "path": str(r.path),
+            }
+            for r in records
+        ]
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    click.echo(_format_runs_table(records))
+
+
+@runs.command("show")
+@click.argument("run_id", required=False)
+@click.option("--last", "use_last", is_flag=True, help="Show the most recent matching run.")
+@click.option("--tree", "tree_id", default=None, help="When used with --last, filter to a tree id.")
+@click.option(
+    "--command",
+    "command_filter",
+    default=None,
+    type=click.Choice(["trees investigate", "trees deep-dive"]),
+    help="When used with --last, filter by command kind.",
+)
+@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+def runs_show(
+    run_id: str | None,
+    use_last: bool,
+    tree_id: str | None,
+    command_filter: str | None,
+    as_json: bool,
+) -> None:
+    """Print the stored result for a run."""
+    from qluent_cli import sessions
+
+    if not run_id and not use_last:
+        raise click.ClickException("Provide a RUN_ID or use --last.")
+    if run_id and use_last:
+        raise click.ClickException("Use either RUN_ID or --last, not both.")
+
+    if use_last:
+        record = sessions.find_last_run(command=command_filter, tree_id=tree_id)
+        if record is None:
+            raise click.ClickException("No persisted runs match.")
+    else:
+        record = sessions.get_run(run_id)
+        if record is None:
+            raise click.ClickException(f"No run found for run_id={run_id}")
+
+    payload = record.load()
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    click.echo(f"run_id: {record.run_id}")
+    click.echo(f"command: {record.command}")
+    if record.tree_id:
+        click.echo(f"tree: {record.tree_id}")
+    if record.period_start and record.period_end:
+        click.echo(f"period: {record.period_start}..{record.period_end}")
+    click.echo(f"started: {record.started_at}")
+    click.echo(f"path: {record.path}")
+    click.echo("")
+    click.echo(json.dumps(payload.get("result"), indent=2))
+
+
+@runs.command("prune")
+@click.option("--older-than", default=None, help="Remove runs older than this duration (e.g. '30d').")
+@click.option("--max", "max_runs", default=None, type=click.IntRange(0, 100000), help="Keep at most N most-recent runs.")
+@click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+def runs_prune(older_than: str | None, max_runs: int | None, as_json: bool) -> None:
+    """Delete old runs by age and/or beyond a most-recent cap."""
+    from qluent_cli import sessions
+
+    if older_than is None and max_runs is None:
+        raise click.ClickException("Provide --older-than and/or --max.")
+
+    try:
+        removed = sessions.prune_runs(older_than=older_than, max_runs=max_runs)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+
+    if as_json:
+        click.echo(json.dumps({"removed": [r.run_id for r in removed]}, indent=2))
+        return
+    click.echo(f"Removed {len(removed)} run(s).")
+
+
+cli.add_command(runs)
+
+
 if __name__ == "__main__":
     cli()

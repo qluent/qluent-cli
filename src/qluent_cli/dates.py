@@ -16,11 +16,66 @@ class DateWindow:
     date_from: date
     date_to: date
 
+    def __post_init__(self) -> None:
+        if self.date_from > self.date_to:
+            raise ValueError(
+                f"Invalid window: date_from {self.date_from} is after date_to {self.date_to}."
+            )
+
+    @property
+    def iso_from(self) -> str:
+        return self.date_from.isoformat()
+
+    @property
+    def iso_to(self) -> str:
+        return self.date_to.isoformat()
+
 
 @dataclass
 class DateWindows:
+    """A current window plus an aligned comparison window.
+
+    Invariants enforced by `DateWindow.__post_init__`:
+      * `current.date_from <= current.date_to`
+      * `comparison.date_from <= comparison.date_to`
+    """
+
     current: DateWindow
     comparison: DateWindow
+
+
+def resolve_windows(
+    period: str | None,
+    current_range: str | None,
+    compare_range: str | None,
+) -> DateWindows:
+    """Resolve CLI period / explicit-range options into a `DateWindows` pair.
+
+    Precedence:
+      1. Both `--current` and `--compare` provided -> use them verbatim.
+      2. Only `--current` provided -> derive comparison from inferred predecessor.
+      3. Otherwise -> infer both from the natural-language `period`
+         (defaulting to "last 7 days").
+    """
+    if current_range and compare_range:
+        return DateWindows(
+            current=_parse_range(current_range),
+            comparison=_parse_range(compare_range),
+        )
+    if current_range:
+        current = _parse_range(current_range)
+        inferred = infer_windows(f"{current.date_from} {current.date_to}")
+        return DateWindows(current=current, comparison=inferred.comparison)
+    return infer_windows(period or "last 7 days")
+
+
+def _parse_range(value: str) -> DateWindow:
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise ValueError(
+            f"Invalid date range '{value}'. Use YYYY-MM-DD:YYYY-MM-DD."
+        )
+    return DateWindow(date.fromisoformat(parts[0]), date.fromisoformat(parts[1]))
 
 
 def infer_windows(period: str, today: date | None = None) -> DateWindows:

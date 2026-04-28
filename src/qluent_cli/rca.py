@@ -8,9 +8,10 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
+from qluent_cli.dates import resolve_windows
 from qluent_cli.rca_contracts import enrich_rca_output
 from qluent_cli.formatters import format_root_cause
-from qluent_cli.utils import parse_filters, resolve_date_args
+from qluent_cli.utils import parse_filters
 
 
 @click.group()
@@ -51,7 +52,9 @@ def analyze(
     as_json: bool,
 ) -> None:
     """Run deterministic root-cause analysis for a metric tree."""
-    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    windows = resolve_windows(period, current_range, compare_range)
+    c_from, c_to = windows.current.iso_from, windows.current.iso_to
+    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
     parsed_filters = parse_filters(filters)
 
     config = load_config()

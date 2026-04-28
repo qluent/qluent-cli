@@ -16,11 +16,12 @@ from typing import Any, Awaitable, Callable
 from qluent_cli import __version__
 from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
+from qluent_cli.dates import resolve_windows
 from qluent_cli.elasticity import analyze_elasticity
 from qluent_cli.rca_contracts import enrich_rca_output
 from qluent_cli.runs import run_investigation
 from qluent_cli.suggestions import build_suggestions
-from qluent_cli.utils import parse_filters, resolve_date_args
+from qluent_cli.utils import parse_filters
 
 
 SERVER_NAME = "qluent"
@@ -54,7 +55,13 @@ def _resolve_dates(
     current_range: str | None,
     compare_range: str | None,
 ) -> tuple[str, str, str, str]:
-    return resolve_date_args(period, current_range, compare_range)
+    windows = resolve_windows(period, current_range, compare_range)
+    return (
+        windows.current.iso_from,
+        windows.current.iso_to,
+        windows.comparison.iso_from,
+        windows.comparison.iso_to,
+    )
 
 
 def _filter_schema() -> dict[str, Any]:

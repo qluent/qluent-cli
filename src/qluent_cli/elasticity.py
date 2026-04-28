@@ -9,8 +9,9 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
+from qluent_cli.dates import resolve_windows
 from qluent_cli.formatters import format_elasticity
-from qluent_cli.utils import parse_filters, resolve_date_args
+from qluent_cli.utils import parse_filters
 
 
 def analyze_elasticity(
@@ -89,7 +90,7 @@ def elasticity(
     as_json: bool,
 ) -> None:
     """Analyze observed elasticity between a lever and an outcome metric."""
-    c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    windows = resolve_windows(period, current_range, compare_range)
     config = load_config()
     client = QluentClient(config)
     data = analyze_elasticity(
@@ -99,10 +100,10 @@ def elasticity(
         outcome=outcome,
         lever=lever,
         dimension=dimension,
-        current_from=c_from,
-        current_to=c_to,
-        comparison_from=p_from,
-        comparison_to=p_to,
+        current_from=windows.current.iso_from,
+        current_to=windows.current.iso_to,
+        comparison_from=windows.comparison.iso_from,
+        comparison_to=windows.comparison.iso_to,
         filters=parse_filters(filters),
     )
 

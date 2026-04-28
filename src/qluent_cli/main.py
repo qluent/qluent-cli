@@ -261,7 +261,13 @@ def _confirm_and_write_claude_file(target: Path, *, force: bool) -> None:
     is_flag=True,
     help="Use the local API at http://localhost:8001 and local UI at http://localhost:5173.",
 )
-def login(local: bool) -> None:
+@click.option(
+    "--install-plugin/--no-install-plugin",
+    "install_plugin",
+    default=None,
+    help="Install the qluent Claude Code plugin without prompting (or skip the prompt).",
+)
+def login(local: bool, install_plugin: bool | None) -> None:
     """Log in via browser (opens qluent-ui for SSO authentication)."""
     from qluent_cli.auth import browser_login
     from qluent_cli.config import (
@@ -271,6 +277,7 @@ def login(local: bool) -> None:
         default_client_safe,
         save_config,
     )
+    from qluent_cli.plugin import offer_claude_plugin_install
 
     api_url = LOCAL_API_URL if local else DEFAULT_API_URL
 
@@ -294,6 +301,7 @@ def login(local: bool) -> None:
     click.echo(CONFIG_SAVED_MSG)
 
     _confirm_and_write_claude_file(Path("CLAUDE.md"), force=False)
+    offer_claude_plugin_install(install_plugin)
 
 
 @cli.command()
@@ -309,7 +317,15 @@ def login(local: bool) -> None:
     help="Use the local API at http://localhost:8001.",
 )
 @click.option("--force", is_flag=True, help="Overwrite an existing CLAUDE.md without prompting.")
-def setup(claude_path: str, local: bool, force: bool) -> None:
+@click.option(
+    "--install-plugin/--no-install-plugin",
+    "install_plugin",
+    default=None,
+    help="Install the qluent Claude Code plugin without prompting (or skip the prompt).",
+)
+def setup(
+    claude_path: str, local: bool, force: bool, install_plugin: bool | None
+) -> None:
     """Interactive first-run setup for client installations."""
     click.echo("Tip: Use 'qluent login' for browser-based login (recommended).\n")
 
@@ -321,6 +337,7 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
         load_raw_config,
         save_config,
     )
+    from qluent_cli.plugin import offer_claude_plugin_install
 
     existing = load_raw_config()
 
@@ -357,11 +374,12 @@ def setup(claude_path: str, local: bool, force: bool) -> None:
         f"Write Claude Code instructions to {target}?",
         default=True,
     )
-    if not write_claude:
+    if write_claude:
+        _confirm_and_write_claude_file(target, force=force)
+    else:
         click.echo("Skipped CLAUDE.md generation")
-        return
 
-    _confirm_and_write_claude_file(target, force=force)
+    offer_claude_plugin_install(install_plugin)
 
 
 cli.add_command(trees)

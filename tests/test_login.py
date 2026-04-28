@@ -32,7 +32,7 @@ def test_login_saves_config_on_success(monkeypatch, isolated_config):
         ),
     )
 
-    result = CliRunner().invoke(cli, ["login"])
+    result = CliRunner().invoke(cli, ["login", "--no-install-plugin"])
 
     assert result.exit_code == 0
     assert "Logged in successfully" in result.output
@@ -54,7 +54,7 @@ def test_login_shows_error_on_failure(monkeypatch, isolated_config):
         ),
     )
 
-    result = CliRunner().invoke(cli, ["login"])
+    result = CliRunner().invoke(cli, ["login", "--no-install-plugin"])
 
     assert result.exit_code != 0
     assert "Login failed" in result.output
@@ -74,7 +74,7 @@ def test_login_local_flag_uses_local_url(monkeypatch, isolated_config):
     )
     monkeypatch.setattr("qluent_cli.auth.browser_login", fake)
 
-    result = CliRunner().invoke(cli, ["login", "--local"])
+    result = CliRunner().invoke(cli, ["login", "--local", "--no-install-plugin"])
 
     assert result.exit_code == 0
     assert fake.called_with_url == config_module.LOCAL_API_URL  # type: ignore[attr-defined]

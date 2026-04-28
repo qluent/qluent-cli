@@ -21,7 +21,7 @@ def test_setup_saves_config_and_writes_claude_md(monkeypatch, isolated_config, t
 
     result = CliRunner().invoke(
         cli,
-        ["setup"],
+        ["setup", "--no-install-plugin"],
         input=(
             "qk_test\n"
             "project-123\n"
@@ -50,7 +50,7 @@ def test_setup_uses_production_default_api_url(monkeypatch, isolated_config, tmp
 
     result = CliRunner().invoke(
         cli,
-        ["setup"],
+        ["setup", "--no-install-plugin"],
         input=(
             "qk_test\n"
             "project-123\n"
@@ -60,6 +60,7 @@ def test_setup_uses_production_default_api_url(monkeypatch, isolated_config, tmp
     )
 
     assert result.exit_code == 0
+    assert "Skipped CLAUDE.md generation" in result.output
     saved = json.loads(config_file.read_text())
     assert saved["api_url"] == config_module.DEFAULT_API_URL
 
@@ -70,7 +71,7 @@ def test_setup_local_flag_prefills_local_api_url(monkeypatch, isolated_config, t
 
     result = CliRunner().invoke(
         cli,
-        ["setup", "--local"],
+        ["setup", "--local", "--no-install-plugin"],
         input=(
             "qk_test\n"
             "project-123\n"

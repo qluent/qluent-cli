@@ -17,8 +17,8 @@ from qluent_cli import __version__
 from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.rca_contracts import enrich_rca_output
+from qluent_cli.runs import run_investigation
 from qluent_cli.suggestions import build_suggestions
-from qluent_cli.trees import _collect_tree_metadata, _sanitize_recommended_next_steps
 from qluent_cli.utils import parse_filters, resolve_date_args
 
 
@@ -76,15 +76,6 @@ def _filter_schema() -> dict[str, Any]:
             "'dimension=value' strings."
         ),
     }
-
-
-def _sanitize_bundle(bundle: dict[str, Any], trees_data: dict[str, Any]) -> None:
-    available_tree_ids, metrics_by_tree = _collect_tree_metadata(trees_data)
-    _sanitize_recommended_next_steps(
-        bundle,
-        available_tree_ids=available_tree_ids,
-        metrics_by_tree=metrics_by_tree,
-    )
 
 
 def _tool_definitions() -> list[dict[str, Any]]:
@@ -293,12 +284,13 @@ async def _investigate(client: QluentClient, _config: QluentConfig, args: dict[s
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
-    bundle = client.investigate_tree(
-        args["tree_id"],
-        c_from,
-        c_to,
-        p_from,
-        p_to,
+    return run_investigation(
+        client,
+        tree_id=args["tree_id"],
+        current_from=c_from,
+        current_to=c_to,
+        comparison_from=p_from,
+        comparison_to=p_to,
         trend_periods=int(args.get("trend_periods", 4)),
         trend_grain=str(args.get("trend_grain", "week")),
         trend_as_of=args.get("trend_as_of"),
@@ -310,8 +302,6 @@ async def _investigate(client: QluentClient, _config: QluentConfig, args: dict[s
         max_segments=int(args.get("max_segments", 5)),
         min_contribution_share=float(args.get("min_contribution_share", 0.1)),
     )
-    _sanitize_bundle(bundle, client.list_trees())
-    return bundle
 
 
 async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
@@ -337,12 +327,14 @@ async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str
     errors: dict[str, str] = {}
     for tid in targets:
         try:
-            bundle = client.investigate_tree(
-                tid,
-                c_from,
-                c_to,
-                p_from,
-                p_to,
+            results[tid] = run_investigation(
+                client,
+                tree_id=tid,
+                current_from=c_from,
+                current_to=c_to,
+                comparison_from=p_from,
+                comparison_to=p_to,
+                trees_data=trees_data,
                 trend_periods=int(args.get("trend_periods", 4)),
                 trend_grain=str(args.get("trend_grain", "week")),
                 trend_as_of=args.get("trend_as_of"),
@@ -351,8 +343,6 @@ async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str
                 max_segments=int(args.get("max_segments", 5)),
                 min_contribution_share=float(args.get("min_contribution_share", 0.1)),
             )
-            _sanitize_bundle(bundle, trees_data)
-            results[tid] = bundle
         except Exception as exc:
             errors[tid] = f"{type(exc).__name__}: {exc}"
 

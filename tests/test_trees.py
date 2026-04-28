@@ -482,6 +482,10 @@ def test_trees_investigate_delegates_to_server(monkeypatch):
     monkeypatch.setattr(
         "qluent_cli.trees.QluentClient.investigate_tree", mock_investigate_tree
     )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}, {"id": "orders", "nodes": []}]},
+    )
 
     result = CliRunner().invoke(
         cli,
@@ -511,6 +515,129 @@ def test_trees_investigate_delegates_to_server(monkeypatch):
     assert investigate_calls[0]["tree_id"] == "revenue"
     assert investigate_calls[0]["compare_trees"] == ["orders"]
     assert investigate_calls[0]["filters"] == {"country": ["SE"]}
+
+
+def test_trees_investigate_converts_metric_compare_recommendation(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {
+            "trees": [
+                {
+                    "id": "revenue",
+                    "nodes": [
+                        {"id": "net_revenue"},
+                        {"id": "order_volume"},
+                    ],
+                },
+                {"id": "growth", "nodes": [{"id": "active_users"}]},
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree",
+        lambda self, tree_id, c_from, c_to, p_from, p_to, **kwargs: {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "agent": {
+                "recommended_next_steps": [
+                    {
+                        "title": "Inspect orders",
+                        "why": "Order volume moved materially.",
+                        "command": (
+                            'qluent trees compare revenue order_volume --period "last month" '
+                            "--json-output"
+                        ),
+                    },
+                    {
+                        "title": "Compare growth",
+                        "why": "Growth may explain the movement.",
+                        "command": (
+                            'qluent trees compare revenue growth --period "last month" '
+                            "--json-output"
+                        ),
+                    },
+                ]
+            },
+        },
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        ["trees", "investigate", "revenue", "--period", "last month", "--json-output"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    steps = payload["agent"]["recommended_next_steps"]
+    assert (
+        steps[0]["command"]
+        == "qluent rca analyze revenue --metric order_volume --period 'last month' --json-output"
+    )
+    assert "`order_volume` is a metric in `revenue`, not a tree id" in steps[0]["why"]
+    assert (
+        steps[1]["command"]
+        == 'qluent trees compare revenue growth --period "last month" --json-output'
+    )
+
+
+def test_trees_investigate_strips_invalid_compare_recommendation(monkeypatch):
+    monkeypatch.setattr(
+        "qluent_cli.trees.load_config",
+        lambda: QluentConfig(
+            api_key="qk_test",
+            api_url="https://api.example.com",
+            project_uuid="project-123",
+            user_email="user@example.com",
+        ),
+    )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {
+            "trees": [
+                {"id": "revenue", "nodes": [{"id": "net_revenue"}]},
+                {"id": "growth", "nodes": [{"id": "active_users"}]},
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree",
+        lambda self, tree_id, c_from, c_to, p_from, p_to, **kwargs: {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "agent": {
+                "recommended_next_steps": [
+                    {
+                        "title": "Compare ROAS",
+                        "why": "ROAS may explain the movement.",
+                        "command": (
+                            'qluent trees compare revenue blended_roas --period "last month" '
+                            "--json-output"
+                        ),
+                    }
+                ]
+            },
+        },
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        ["trees", "investigate", "revenue", "--period", "last month", "--json-output"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    step = payload["agent"]["recommended_next_steps"][0]
+    assert "command" not in step
+    assert "compare targets must be available tree ids: growth, revenue" in step["why"]
 
 
 def test_trees_investigate_requires_tree_id():

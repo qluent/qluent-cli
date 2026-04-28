@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from datetime import date as dt_date
 from typing import Any
 
@@ -195,6 +196,106 @@ def _collect_trend_evaluations(
         )
         evaluations.append(data)
     return evaluations
+
+
+def _collect_tree_metadata(trees_data: dict[str, Any]) -> tuple[set[str], dict[str, set[str]]]:
+    tree_ids: set[str] = set()
+    metrics_by_tree: dict[str, set[str]] = {}
+    for tree in trees_data.get("trees") or []:
+        tree_id = tree.get("id")
+        if not tree_id:
+            continue
+        tree_id = str(tree_id)
+        tree_ids.add(tree_id)
+        metrics: set[str] = set()
+        for node in tree.get("nodes") or []:
+            node_id = node.get("id") or node.get("node_id")
+            if node_id:
+                metrics.add(str(node_id))
+        metrics_by_tree[tree_id] = metrics
+    return tree_ids, metrics_by_tree
+
+
+def _option_start(tokens: list[str]) -> int:
+    for index, token in enumerate(tokens):
+        if token.startswith("-"):
+            return index
+    return len(tokens)
+
+
+def _convert_metric_compare_command(
+    *,
+    primary_tree: str,
+    metric_id: str,
+    option_tokens: list[str],
+) -> str:
+    command = ["qluent", "rca", "analyze", primary_tree, "--metric", metric_id]
+    command.extend(option_tokens)
+    return " ".join(shlex.quote(token) for token in command)
+
+
+def _sanitize_recommended_next_steps(
+    bundle: dict[str, Any],
+    *,
+    available_tree_ids: set[str],
+    metrics_by_tree: dict[str, set[str]],
+) -> None:
+    agent = bundle.get("agent")
+    if not isinstance(agent, dict):
+        return
+
+    next_steps = agent.get("recommended_next_steps")
+    if not isinstance(next_steps, list):
+        return
+
+    for step in next_steps:
+        if not isinstance(step, dict):
+            continue
+        command = step.get("command")
+        if not isinstance(command, str) or not command.strip():
+            continue
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            step.pop("command", None)
+            step["why"] = (step.get("why") or "Recommended command was malformed.").rstrip()
+            continue
+        if tokens[:3] != ["qluent", "trees", "compare"]:
+            continue
+
+        start = _option_start(tokens[3:])
+        tree_args = tokens[3 : 3 + start]
+        option_tokens = tokens[3 + start :]
+        invalid_targets = [target for target in tree_args if target not in available_tree_ids]
+        if not invalid_targets:
+            continue
+
+        primary_tree = tree_args[0] if tree_args else str(bundle.get("tree_id") or "")
+        if (
+            len(tree_args) == 2
+            and len(invalid_targets) == 1
+            and primary_tree in available_tree_ids
+            and invalid_targets[0] in metrics_by_tree.get(primary_tree, set())
+        ):
+            metric_id = invalid_targets[0]
+            step["command"] = _convert_metric_compare_command(
+                primary_tree=primary_tree,
+                metric_id=metric_id,
+                option_tokens=option_tokens,
+            )
+            step["why"] = (
+                (step.get("why") or "").rstrip()
+                + f" Converted from compare because `{metric_id}` is a metric in `{primary_tree}`, not a tree id."
+            ).strip()
+            continue
+
+        step.pop("command", None)
+        step["why"] = (
+            (step.get("why") or "").rstrip()
+            + " No executable command emitted because compare targets must be available tree ids: "
+            + ", ".join(sorted(available_tree_ids))
+            + "."
+        ).strip()
 
 
 
@@ -396,6 +497,7 @@ def investigate(
     client = QluentClient(load_config())
     parsed_filters = parse_filters(filters)
     c_from, c_to, p_from, p_to = resolve_date_args(period, current_range, compare_range)
+    available_tree_ids, metrics_by_tree = _collect_tree_metadata(client.list_trees())
 
     bundle = client.investigate_tree(
         tree_id,
@@ -413,6 +515,11 @@ def investigate(
         max_branching=max_branches,
         max_segments=max_segments,
         min_contribution_share=min_contribution_share,
+    )
+    _sanitize_recommended_next_steps(
+        bundle,
+        available_tree_ids=available_tree_ids,
+        metrics_by_tree=metrics_by_tree,
     )
 
     if as_json:

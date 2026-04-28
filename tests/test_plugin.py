@@ -107,7 +107,10 @@ def test_install_claude_plugin_returns_false_on_timeout(monkeypatch, capsys):
     assert "timed out" in err
 
 
-def test_login_install_plugin_flag_invokes_install(monkeypatch, isolated_config, fake_browser_login):
+def test_login_install_plugin_flag_invokes_install(
+    monkeypatch, isolated_config, fake_browser_login, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
     called = []
     monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
     monkeypatch.setattr(
@@ -123,7 +126,10 @@ def test_login_install_plugin_flag_invokes_install(monkeypatch, isolated_config,
     assert plugin_module.PLUGIN_ID in result.output
 
 
-def test_login_no_install_plugin_skips(monkeypatch, isolated_config, fake_browser_login):
+def test_login_no_install_plugin_skips(
+    monkeypatch, isolated_config, fake_browser_login, tmp_path
+):
+    monkeypatch.chdir(tmp_path)
     called = []
     monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
     monkeypatch.setattr(
@@ -138,7 +144,9 @@ def test_login_no_install_plugin_skips(monkeypatch, isolated_config, fake_browse
     assert called == []
 
 
-def test_login_prompt_declined(monkeypatch, isolated_config, fake_browser_login):
+def test_login_prompt_declined(monkeypatch, isolated_config, fake_browser_login, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "CLAUDE.md").write_text("existing content")
     called = []
     monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
     monkeypatch.setattr(
@@ -147,7 +155,7 @@ def test_login_prompt_declined(monkeypatch, isolated_config, fake_browser_login)
         lambda: called.append("ran") or True,
     )
 
-    # First "n" declines CLAUDE.md overwrite (file exists in repo root),
+    # First "n" declines CLAUDE.md overwrite (we created one above),
     # second "n" declines plugin install.
     result = CliRunner().invoke(cli, ["login"], input="n\nn\n")
 

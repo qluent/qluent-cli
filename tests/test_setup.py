@@ -4,6 +4,7 @@ import json
 
 from click.testing import CliRunner
 
+from qluent_cli import __version__
 from qluent_cli import config as config_module
 from qluent_cli.main import cli
 
@@ -12,7 +13,7 @@ def test_version_outputs_package_version():
     result = CliRunner().invoke(cli, ["--version"])
 
     assert result.exit_code == 0
-    assert "qluent, version 0.1.8" in result.output
+    assert f"qluent, version {__version__}" in result.output
 
 
 def test_setup_saves_config_and_writes_claude_md(monkeypatch, isolated_config, tmp_path):

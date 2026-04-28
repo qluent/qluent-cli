@@ -71,7 +71,7 @@ def test_offer_install_prints_hint_when_claude_missing(monkeypatch, capsys):
 def test_install_claude_plugin_runs_both_steps(monkeypatch):
     commands = []
 
-    def fake_run(cmd, capture_output, text, check):
+    def fake_run(cmd, **_kwargs):
         commands.append(cmd)
         return _completed()
 
@@ -85,7 +85,7 @@ def test_install_claude_plugin_runs_both_steps(monkeypatch):
 
 
 def test_install_claude_plugin_returns_false_on_step_failure(monkeypatch, capsys):
-    def fake_run(cmd, capture_output, text, check):
+    def fake_run(cmd, **_kwargs):
         return _completed(returncode=1, stderr="boom")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -94,6 +94,17 @@ def test_install_claude_plugin_returns_false_on_step_failure(monkeypatch, capsys
     err = capsys.readouterr().err
     assert "Failed: plugin marketplace add" in err
     assert "boom" in err
+
+
+def test_install_claude_plugin_returns_false_on_timeout(monkeypatch, capsys):
+    def fake_run(cmd, **_kwargs):
+        raise subprocess.TimeoutExpired(cmd=cmd, timeout=plugin_module._STEP_TIMEOUT_SECONDS)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert plugin_module.install_claude_plugin() is False
+    err = capsys.readouterr().err
+    assert "timed out" in err
 
 
 def test_login_install_plugin_flag_invokes_install(monkeypatch, isolated_config, fake_browser_login):
@@ -142,3 +153,61 @@ def test_login_prompt_declined(monkeypatch, isolated_config, fake_browser_login)
 
     assert result.exit_code == 0
     assert called == []
+
+
+def test_update_claude_plugin_runs_both_steps(monkeypatch):
+    commands = []
+
+    def fake_run(cmd, **_kwargs):
+        commands.append(cmd)
+        return _completed()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert plugin_module.update_claude_plugin() is True
+    assert commands == [
+        ["claude", "plugin", "marketplace", "update", plugin_module.MARKETPLACE_NAME],
+        ["claude", "plugin", "update", plugin_module.PLUGIN_ID],
+    ]
+
+
+def test_update_claude_plugin_returns_false_on_step_failure(monkeypatch, capsys):
+    def fake_run(cmd, **_kwargs):
+        return _completed(returncode=1, stderr="network down")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert plugin_module.update_claude_plugin() is False
+    err = capsys.readouterr().err
+    assert "Failed: plugin marketplace update" in err
+    assert "network down" in err
+
+
+def test_claude_update_command_succeeds(monkeypatch):
+    monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
+    monkeypatch.setattr(plugin_module, "update_claude_plugin", lambda: True)
+
+    result = CliRunner().invoke(cli, ["claude", "update"])
+
+    assert result.exit_code == 0
+    assert plugin_module.PLUGIN_ID in result.output
+    assert "up to date" in result.output
+
+
+def test_claude_update_command_fails_when_claude_missing(monkeypatch):
+    monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: False)
+
+    result = CliRunner().invoke(cli, ["claude", "update"])
+
+    assert result.exit_code != 0
+    assert "Claude Code CLI not found" in result.output
+
+
+def test_claude_update_command_fails_on_step_error(monkeypatch):
+    monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
+    monkeypatch.setattr(plugin_module, "update_claude_plugin", lambda: False)
+
+    result = CliRunner().invoke(cli, ["claude", "update"])
+
+    assert result.exit_code != 0
+    assert "Plugin update failed" in result.output

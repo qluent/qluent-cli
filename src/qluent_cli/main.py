@@ -414,6 +414,27 @@ def claude_init(target_path: str, force: bool) -> None:
     click.echo(_write_claude_file(Path(target_path), force=force))
 
 
+@claude.command("update")
+def claude_update() -> None:
+    """Refresh the qluent Claude Code plugin to the latest version."""
+    from qluent_cli.plugin import (
+        PLUGIN_ID,
+        claude_cli_available,
+        update_claude_plugin,
+    )
+
+    if not claude_cli_available():
+        raise click.ClickException(
+            "Claude Code CLI not found on PATH. Install it from https://claude.ai/code "
+            "and try again."
+        )
+
+    if not update_claude_plugin():
+        raise click.ClickException("Plugin update failed. See messages above.")
+
+    click.echo(f"Claude Code plugin up to date: {PLUGIN_ID}")
+
+
 cli.add_command(claude)
 
 if __name__ == "__main__":

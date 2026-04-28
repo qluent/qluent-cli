@@ -63,9 +63,9 @@ def test_offer_install_prints_hint_when_claude_missing(monkeypatch, capsys):
 
     plugin_module.offer_claude_plugin_install(None)
 
-    out = capsys.readouterr().out
-    assert "Claude Code CLI not detected" in out
-    assert "claude plugin marketplace add" in out
+    err = capsys.readouterr().err
+    assert "Claude Code CLI not detected" in err
+    assert "claude plugin marketplace add" in err
 
 
 def test_install_claude_plugin_runs_both_steps(monkeypatch):

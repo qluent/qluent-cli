@@ -252,7 +252,7 @@ def test_trees_levers_outputs_ranked_scenarios(monkeypatch):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["tree_id"] == "revenue"
     assert payload["scenarios"] == [0.02, 0.1]
     assert [lever["node_id"] for lever in payload["top_levers"]] == [
@@ -328,7 +328,7 @@ def test_trees_evaluate_contract_output_includes_value_metadata(monkeypatch):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["schema_version"] == "qluent.tree_query.v1"
     assert payload["deterministic"] is True
     assert payload["agent_interpretation"] is None
@@ -508,7 +508,7 @@ def test_trees_investigate_delegates_to_server(monkeypatch):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["tree_id"] == "revenue"
     assert payload["agent"]["status"] == "resolved"
     assert len(investigate_calls) == 1
@@ -576,7 +576,7 @@ def test_trees_investigate_converts_metric_compare_recommendation(monkeypatch):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     steps = payload["agent"]["recommended_next_steps"]
     assert (
         steps[0]["command"]
@@ -634,10 +634,90 @@ def test_trees_investigate_strips_invalid_compare_recommendation(monkeypatch):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     step = payload["agent"]["recommended_next_steps"][0]
     assert "command" not in step
     assert "compare targets must be available tree ids: growth, revenue" in step["why"]
+
+
+def test_trees_investigate_keeps_json_on_stdout_and_progress_on_stderr(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
+    )
+    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+        kwargs["progress_callback"]("awaiting_api", 30.0)
+        return {
+            "tree_id": tree_id,
+            "agent": {},
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.investigate_tree", mock_investigate)
+
+    result = CliRunner().invoke(
+        cli,
+        ["trees", "investigate", "revenue", "--period", "last month", "--json-output"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output[result.output.index("{") :])["tree_id"] == "revenue"
+    assert "[qluent] awaiting response" in result.output
+
+
+def test_quiet_suppresses_investigate_progress(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
+    )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree",
+        lambda self, tree_id, c_from, c_to, p_from, p_to, **kwargs: {
+            "tree_id": tree_id,
+            "agent": {},
+        },
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        ["--quiet", "trees", "investigate", "revenue", "--period", "last month", "--json-output"],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["tree_id"] == "revenue"
+    assert "[qluent]" not in result.output
+
+
+def test_trees_investigate_stream_emits_jsonl(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
+    )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree",
+        lambda self, tree_id, c_from, c_to, p_from, p_to, **kwargs: {
+            "tree_id": tree_id,
+            "agent": {"status": "resolved"},
+        },
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        ["trees", "investigate", "revenue", "--period", "last month", "--json-output", "--stream"],
+    )
+
+    assert result.exit_code == 0
+    events = [json.loads(line) for line in result.output.splitlines()]
+    assert [event["type"] for event in events] == [
+        "run.started",
+        "run.progress",
+        "run.progress",
+        "run.completed",
+    ]
+    assert events[0]["tree"] == "revenue"
+    assert events[-1]["result"]["agent"]["status"] == "resolved"
 
 
 def test_trees_investigate_requires_tree_id():
@@ -707,7 +787,7 @@ def test_trees_deep_dive_runs_all_trees(monkeypatch):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["trees_requested"] == ["revenue", "growth", "operations"]
     assert set(payload["trees"].keys()) == {"revenue", "growth", "operations"}
     assert payload["errors"] == {}
@@ -752,7 +832,7 @@ def test_trees_deep_dive_filters_to_requested_trees(monkeypatch):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert payload["trees_requested"] == ["revenue"]
     assert calls == ["revenue"]
 
@@ -817,7 +897,7 @@ def test_trees_deep_dive_captures_per_tree_errors(monkeypatch):
     )
 
     assert result.exit_code == 0
-    payload = json.loads(result.output)
+    payload = json.loads(result.stdout)
     assert "revenue" in payload["trees"]
     assert "growth" not in payload["trees"]
     assert payload["errors"] == {"growth": "RuntimeError: upstream timeout"}

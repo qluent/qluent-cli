@@ -17,12 +17,17 @@ from qluent_cli.formatters import format_tree_list
 from qluent_cli.rca import rca
 from qluent_cli.suggestions import suggestions
 from qluent_cli.trees import trees
+from qluent_cli.output import echo_status
 
 
 @click.group()
+@click.option("--quiet", is_flag=True, help="Suppress non-result status output.")
 @click.version_option(version=__version__, prog_name="qluent")
-def cli() -> None:
+@click.pass_context
+def cli(ctx: click.Context, quiet: bool) -> None:
     """Qluent — metric tree analysis from the command line."""
+    ctx.ensure_object(dict)
+    ctx.obj["quiet"] = quiet
 
 
 def _print_saved_config(data: dict[str, object]) -> None:
@@ -32,7 +37,7 @@ def _print_saved_config(data: dict[str, object]) -> None:
     for key, value in data.items():
         if key in hidden:
             continue
-        click.echo(f"  {key}: {mask_key(value) if key == 'api_key' else value}")
+        echo_status(f"  {key}: {mask_key(value) if key == 'api_key' else value}")
 
 
 def _prompt_required(
@@ -49,7 +54,7 @@ def _prompt_required(
         ).strip()
         if value:
             return value
-        click.echo(f"{label} is required")
+        echo_status(f"{label} is required")
 
 
 def _tree_metric_labels(tree: dict[str, Any]) -> list[str]:
@@ -216,7 +221,7 @@ def config(
                 )
             _print_saved_config(data)
         else:
-            click.echo("No config file found. Run: qluent setup")
+            echo_status("No config file found. Run: qluent setup")
         return
 
     result = save_config(
@@ -230,7 +235,7 @@ def config(
         result["client_safe"] = default_client_safe(
             str(result.get("api_url") or DEFAULT_API_URL)
         )
-    click.echo(CONFIG_SAVED_MSG)
+    echo_status(CONFIG_SAVED_MSG)
     _print_saved_config(result)
 
 
@@ -250,9 +255,9 @@ def _confirm_and_write_claude_file(target: Path, *, force: bool) -> None:
     """Prompt to overwrite if needed, then write CLAUDE.md."""
     if target.exists() and not force:
         if not click.confirm(f"{target} already exists. Overwrite it?", default=False):
-            click.echo("Skipped CLAUDE.md generation")
+            echo_status("Skipped CLAUDE.md generation")
             return
-    click.echo(_write_claude_file(target, force=force or target.exists()))
+    echo_status(_write_claude_file(target, force=force or target.exists()))
 
 
 @cli.command()
@@ -295,10 +300,10 @@ def login(local: bool, install_plugin: bool | None) -> None:
         client_safe=client_safe,
     )
 
-    click.echo("Logged in successfully!")
-    click.echo(f"  Project: {result.project_uuid}")
-    click.echo(f"  Email:   {result.user_email}")
-    click.echo(CONFIG_SAVED_MSG)
+    echo_status("Logged in successfully!")
+    echo_status(f"  Project: {result.project_uuid}")
+    echo_status(f"  Email:   {result.user_email}")
+    echo_status(CONFIG_SAVED_MSG)
 
     _confirm_and_write_claude_file(Path("CLAUDE.md"), force=False)
     offer_claude_plugin_install(install_plugin)
@@ -327,7 +332,7 @@ def setup(
     claude_path: str, local: bool, force: bool, install_plugin: bool | None
 ) -> None:
     """Interactive first-run setup for client installations."""
-    click.echo("Tip: Use 'qluent login' for browser-based login (recommended).\n")
+    echo_status("Tip: Use 'qluent login' for browser-based login (recommended).\n")
 
     from qluent_cli.config import (
         CONFIG_SAVED_MSG,
@@ -366,7 +371,7 @@ def setup(
         user_email=user_email,
         client_safe=client_safe,
     )
-    click.echo(CONFIG_SAVED_MSG)
+    echo_status(CONFIG_SAVED_MSG)
     _print_saved_config(result)
 
     target = Path(claude_path)
@@ -377,7 +382,7 @@ def setup(
     if write_claude:
         _confirm_and_write_claude_file(target, force=force)
     else:
-        click.echo("Skipped CLAUDE.md generation")
+        echo_status("Skipped CLAUDE.md generation")
 
     offer_claude_plugin_install(install_plugin)
 
@@ -411,7 +416,7 @@ def claude() -> None:
 @click.option("--force", is_flag=True, help="Overwrite an existing CLAUDE.md")
 def claude_init(target_path: str, force: bool) -> None:
     """Write a CLAUDE.md file for Claude Code."""
-    click.echo(_write_claude_file(Path(target_path), force=force))
+    echo_status(_write_claude_file(Path(target_path), force=force))
 
 
 @claude.command("update")
@@ -432,7 +437,7 @@ def claude_update() -> None:
     if not update_claude_plugin():
         raise click.ClickException("Plugin update failed. See messages above.")
 
-    click.echo(f"Claude Code plugin up to date: {PLUGIN_ID}")
+    echo_status(f"Claude Code plugin up to date: {PLUGIN_ID}")
 
 
 cli.add_command(claude)

@@ -7,6 +7,7 @@ questions about business performance, revenue drivers, cost breakdowns, and tren
 
 ```bash
 qluent trees list                                           # List available metric trees (start here for any natural-language question)
+qluent suggestions --json-output                           # Project-specific example questions and commands
 qluent trees get <tree_id>                                  # Show tree hierarchy
 qluent trees validate <tree_id>                             # Validate tree SQL contracts and dimensions
 qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
@@ -38,6 +39,12 @@ If the user already named the tree (e.g. "investigate revenue last week"), run:
 
 ```bash
 qluent trees investigate <tree_id> --period "<period>" --json-output
+```
+
+If the user asked what they can do with the connected project, run:
+
+```bash
+qluent suggestions --json-output
 ```
 
 If the user asked a natural-language question without naming a tree, list the

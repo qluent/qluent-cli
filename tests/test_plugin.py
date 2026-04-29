@@ -73,29 +73,49 @@ def test_offer_install_prints_hint_when_claude_missing(monkeypatch, capsys):
     assert "claude plugin marketplace add" in err
 
 
-def test_offer_install_prints_refresh_tip_when_already_installed(monkeypatch, capsys):
-    called = []
+def test_offer_install_runs_sync_when_already_installed(monkeypatch, capsys):
+    """When the plugin is already installed, login runs sync — no install, no prompt."""
+    install_calls = []
+    sync_calls = []
     monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
     monkeypatch.setattr(plugin_module, "is_claude_plugin_installed", lambda: True)
     monkeypatch.setattr(
         plugin_module,
         "install_claude_plugin",
-        lambda: called.append("install") or True,
+        lambda: install_calls.append("install") or True,
+    )
+    monkeypatch.setattr(
+        plugin_module,
+        "sync_claude_plugin",
+        lambda: sync_calls.append("sync") or True,
     )
 
     plugin_module.offer_claude_plugin_install(None)
 
     err = capsys.readouterr().err
-    assert called == []
+    assert install_calls == []
+    assert sync_calls == ["sync"]
+    assert f"Claude Code plugin synced: {plugin_module.PLUGIN_ID}" in err
+
+
+def test_offer_install_falls_back_to_tip_when_sync_fails(monkeypatch, capsys):
+    """If sync fails, login still completes and prints the static refresh tip."""
+    monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
+    monkeypatch.setattr(plugin_module, "is_claude_plugin_installed", lambda: True)
+    monkeypatch.setattr(plugin_module, "sync_claude_plugin", lambda: False)
+
+    plugin_module.offer_claude_plugin_install(None)
+
+    err = capsys.readouterr().err
     assert f"/plugin marketplace update {plugin_module.MARKETPLACE_NAME}" in err
-    # No version comparison output should leak through.
-    assert "up to date" not in err
+    assert "synced" not in err
 
 
 def test_offer_install_does_not_print_freshness_verdict(monkeypatch, capsys):
     """Regression: the old `Claude Code plugin up to date: …` line is gone."""
     monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
     monkeypatch.setattr(plugin_module, "is_claude_plugin_installed", lambda: True)
+    monkeypatch.setattr(plugin_module, "sync_claude_plugin", lambda: True)
 
     plugin_module.offer_claude_plugin_install(None)
 
@@ -240,18 +260,73 @@ def test_login_prompt_declined(monkeypatch, isolated_config, fake_browser_login,
     assert called == []
 
 
-def test_login_emits_refresh_tip_when_plugin_already_installed(
+def test_login_syncs_plugin_when_already_installed(
     monkeypatch, isolated_config, fake_browser_login, tmp_path
 ):
+    """End-to-end: every `qluent login` triggers a plugin sync if installed."""
     monkeypatch.chdir(tmp_path)
+    sync_calls = []
     monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
     monkeypatch.setattr(plugin_module, "is_claude_plugin_installed", lambda: True)
+    monkeypatch.setattr(
+        plugin_module,
+        "sync_claude_plugin",
+        lambda: sync_calls.append("sync") or True,
+    )
 
     result = CliRunner().invoke(cli, ["login"])
 
     assert result.exit_code == 0
-    assert f"/plugin marketplace update {plugin_module.MARKETPLACE_NAME}" in result.output
-    assert "Claude Code plugin up to date" not in result.output
+    assert sync_calls == ["sync"]
+    assert f"Claude Code plugin synced: {plugin_module.PLUGIN_ID}" in result.output
+
+
+def test_login_no_install_plugin_skips_sync(
+    monkeypatch, isolated_config, fake_browser_login, tmp_path
+):
+    """`--no-install-plugin` is the escape hatch — also skips sync."""
+    monkeypatch.chdir(tmp_path)
+    sync_calls = []
+    monkeypatch.setattr(plugin_module, "claude_cli_available", lambda: True)
+    monkeypatch.setattr(plugin_module, "is_claude_plugin_installed", lambda: True)
+    monkeypatch.setattr(
+        plugin_module,
+        "sync_claude_plugin",
+        lambda: sync_calls.append("sync") or True,
+    )
+
+    result = CliRunner().invoke(cli, ["login", "--no-install-plugin"])
+
+    assert result.exit_code == 0
+    assert sync_calls == []
+
+
+def test_sync_claude_plugin_runs_both_steps(monkeypatch):
+    commands = []
+
+    def fake_run(cmd, **_kwargs):
+        commands.append(cmd)
+        return _completed()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert plugin_module.sync_claude_plugin() is True
+    assert commands == [
+        ["claude", "plugin", "marketplace", "update", plugin_module.MARKETPLACE_NAME],
+        ["claude", "plugin", "update", plugin_module.PLUGIN_ID],
+    ]
+
+
+def test_sync_claude_plugin_returns_false_on_step_failure(monkeypatch, capsys):
+    def fake_run(cmd, **_kwargs):
+        return _completed(returncode=1, stderr="network down")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert plugin_module.sync_claude_plugin() is False
+    err = capsys.readouterr().err
+    assert "Failed: plugin marketplace update" in err
+    assert "network down" in err
 
 
 def test_claude_update_subcommand_is_removed():

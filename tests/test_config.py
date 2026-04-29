@@ -11,6 +11,9 @@ def test_default_client_safe_prefers_hosted_urls():
     assert config_module.default_client_safe("https://api.example.com") is True
     assert config_module.default_client_safe("http://localhost:8001") is False
     assert config_module.default_client_safe("http://127.0.0.1:8001") is False
+    assert config_module.default_client_safe("http://[::1]:8001") is False
+    assert config_module.default_client_safe("http://localhost.evil.example") is True
+    assert config_module.default_client_safe("http://127.0.0.1.evil.example") is True
 
 
 def test_load_config_defaults_to_production_api_url(isolated_config):
@@ -59,6 +62,31 @@ def test_load_config_rejects_http_non_local_url(isolated_config):
             {
                 "api_key": "qk_test",
                 "api_url": "http://api.example.com",
+                "project_uuid": "project-123",
+                "user_email": "user@example.com",
+            }
+        )
+    )
+
+    with pytest.raises(SystemExit, match="Refusing to connect over plain HTTP"):
+        config_module.load_config()
+
+
+@pytest.mark.parametrize(
+    "api_url",
+    [
+        "http://localhost.evil.example",
+        "http://127.0.0.1.evil.example",
+    ],
+)
+def test_load_config_rejects_http_loopback_prefix_spoof(api_url, isolated_config):
+    config_dir, config_file = isolated_config
+    config_dir.mkdir()
+    config_file.write_text(
+        json.dumps(
+            {
+                "api_key": "qk_test",
+                "api_url": api_url,
                 "project_uuid": "project-123",
                 "user_email": "user@example.com",
             }

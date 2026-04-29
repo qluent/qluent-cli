@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import stat
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -85,6 +86,16 @@ def test_record_run_writes_file_and_indexes(isolated_config):
     body = json.loads(record.path.read_text())
     assert body["run_id"] == record.run_id
     assert body["result"] == {"tree_id": "revenue", "delta": 10}
+
+
+def test_record_run_uses_private_file_modes(isolated_config):
+    record = _record(payload={"tree_id": "revenue", "delta": 10})
+    config_dir, _config_file = isolated_config
+
+    assert stat.S_IMODE((config_dir / "sessions").stat().st_mode) == 0o700
+    assert stat.S_IMODE(record.path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(record.path.stat().st_mode) == 0o600
+    assert stat.S_IMODE((config_dir / "sessions" / "index.db").stat().st_mode) == 0o600
 
 
 def test_record_run_sanitizes_tree_id_for_filename(isolated_config):

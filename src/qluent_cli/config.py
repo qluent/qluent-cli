@@ -7,6 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 CONFIG_DIR = Path.home() / ".qluent"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -32,11 +33,10 @@ def _parse_bool(value: Any) -> bool:
 
 
 def is_local_url(api_url: str) -> bool:
-    """Check whether a URL points to localhost or 127.0.0.1."""
-    normalized = api_url.rstrip("/").lower()
-    return normalized.startswith("http://localhost") or normalized.startswith(
-        "http://127.0.0.1"
-    )
+    """Check whether a URL points to an explicit loopback host."""
+    parsed = urlparse(api_url)
+    host = (parsed.hostname or "").lower()
+    return host in {"localhost", "127.0.0.1", "::1"}
 
 
 def default_client_safe(api_url: str) -> bool:

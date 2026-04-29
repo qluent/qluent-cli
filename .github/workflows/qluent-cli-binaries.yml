@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     permissions:
-      contents: write
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -38,8 +38,6 @@ jobs:
 
       - name: Build standalone binary
         run: python -m qluent_cli.build_binary
-        env:
-          QLUENT_SIGNING_PRIVATE_KEY: ${{ secrets.QLUENT_SIGNING_PRIVATE_KEY }}
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -62,6 +60,40 @@ jobs:
         with:
           path: release-assets
           merge-multiple: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install signing dependencies
+        run: python -m pip install "cryptography>=43.0"
+
+      - name: Sign checksum files
+        env:
+          QLUENT_SIGNING_PRIVATE_KEY: ${{ secrets.QLUENT_SIGNING_PRIVATE_KEY }}
+        run: |
+          python - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+          private_key_pem = os.environ.get("QLUENT_SIGNING_PRIVATE_KEY")
+          if not private_key_pem:
+              raise SystemExit("QLUENT_SIGNING_PRIVATE_KEY is required for releases")
+
+          private_key = load_pem_private_key(private_key_pem.encode(), password=None)
+          checksum_paths = sorted(Path("release-assets").glob("*.sha256"))
+          if not checksum_paths:
+              raise SystemExit("No checksum files found to sign")
+
+          for checksum_path in checksum_paths:
+              signature = private_key.sign(checksum_path.read_bytes())
+              sig_path = checksum_path.with_name(f"{checksum_path.name}.sig")
+              sig_path.write_text(base64.b64encode(signature).decode() + "\n")
+              print(f"Signed {sig_path}")
+          PY
 
       - name: Publish GitHub release assets
         uses: softprops/action-gh-release@v2

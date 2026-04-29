@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import click
@@ -11,6 +10,7 @@ from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.dates import resolve_windows
 from qluent_cli.formatters import format_elasticity
+from qluent_cli.rendering import render, simple_result
 from qluent_cli.utils import parse_filters
 
 
@@ -107,7 +107,4 @@ def elasticity(
         filters=parse_filters(filters),
     )
 
-    if as_json:
-        click.echo(json.dumps(data, indent=2))
-    else:
-        click.echo(format_elasticity(data))
+    render(simple_result(data, formatter=format_elasticity), as_json=as_json)

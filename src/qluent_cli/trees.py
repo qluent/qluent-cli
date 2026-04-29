@@ -7,7 +7,6 @@ module, and render output.
 
 from __future__ import annotations
 
-import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date as dt_date
 from typing import Any
@@ -17,6 +16,7 @@ import click
 from qluent_cli import sessions
 from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
+from qluent_cli.rendering import Result, render, simple_result
 from qluent_cli.runs import RunReporter, run_investigation
 from qluent_cli.tree_contracts import build_tree_query_contract
 from qluent_cli.formatters import (
@@ -258,11 +258,7 @@ def list_trees(as_json: bool) -> None:
     """List available metric trees."""
     client = QluentClient(load_config())
     data = client.list_trees()
-
-    if as_json:
-        click.echo(json.dumps(data, indent=2))
-    else:
-        click.echo(format_tree_list(data))
+    render(simple_result(data, formatter=format_tree_list), as_json=as_json)
 
 
 @trees.command()
@@ -272,11 +268,7 @@ def get(tree_id: str, as_json: bool) -> None:
     """Show the structure of a metric tree."""
     client = QluentClient(load_config())
     data = client.get_tree(tree_id)
-
-    if as_json:
-        click.echo(json.dumps(data, indent=2))
-    else:
-        click.echo(format_tree_detail(data))
+    render(simple_result(data, formatter=format_tree_detail), as_json=as_json)
 
 
 @trees.command()
@@ -286,11 +278,7 @@ def validate(tree_id: str, as_json: bool) -> None:
     """Validate a saved metric tree against its referenced metric SQL."""
     client = QluentClient(load_config())
     data = client.validate_tree(tree_id)
-
-    if as_json:
-        click.echo(json.dumps(data, indent=2))
-    else:
-        click.echo(format_tree_validation(data))
+    render(simple_result(data, formatter=format_tree_validation), as_json=as_json)
 
 
 @trees.command()
@@ -319,11 +307,12 @@ def evaluate(
     data = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
 
     if contract_output:
-        click.echo(json.dumps(build_tree_query_contract(data, config), indent=2))
-    elif as_json:
-        click.echo(json.dumps(data, indent=2))
-    else:
-        click.echo(format_evaluation(data))
+        render(
+            Result(json_payload=build_tree_query_contract(data, config), human=""),
+            as_json=True,
+        )
+        return
+    render(simple_result(data, formatter=format_evaluation), as_json=as_json)
 
 
 @trees.command()
@@ -359,11 +348,7 @@ def levers(
     data = _build_lever_analysis(evaluation, top_n=top, scenarios=scenarios)
     if data is None:
         raise click.ClickException("Could not compute lever analysis from the evaluation result.")
-
-    if as_json:
-        click.echo(json.dumps(data, indent=2))
-    else:
-        click.echo(format_levers(data))
+    render(simple_result(data, formatter=format_levers), as_json=as_json)
 
 
 @trees.command()
@@ -377,11 +362,11 @@ def trend(tree_id: str, periods: int, grain: str, as_of: str | None, as_json: bo
     client = QluentClient(load_config())
     evaluations = _collect_trend_evaluations(client, tree_id, periods, grain, as_of)
 
-    if as_json:
-        click.echo(json.dumps(evaluations, indent=2))
-    else:
-        tree_label = evaluations[0].get("tree_label", tree_id) if evaluations else tree_id
-        click.echo(format_trend(tree_label, evaluations, grain))
+    tree_label = evaluations[0].get("tree_label", tree_id) if evaluations else tree_id
+    render(
+        Result(json_payload=evaluations, human=lambda: format_trend(tree_label, evaluations, grain)),
+        as_json=as_json,
+    )
 
 
 @trees.command()
@@ -408,10 +393,13 @@ def compare(
         data = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
         results.append((data.get("tree_label", tree_id), data))
 
-    if as_json:
-        click.echo(json.dumps([data for _, data in results], indent=2))
-    else:
-        click.echo(format_comparison(results, format_period_label(c_from, c_to, p_from, p_to)))
+    render(
+        Result(
+            json_payload=[data for _, data in results],
+            human=lambda: format_comparison(results, format_period_label(c_from, c_to, p_from, p_to)),
+        ),
+        as_json=as_json,
+    )
 
 
 @trees.command()
@@ -556,13 +544,14 @@ def _emit_investigation(
     run_id: str | None,
     from_cache: bool = False,
 ) -> None:
-    if as_json:
-        click.echo(json.dumps(bundle, indent=2))
-    else:
-        click.echo(format_investigation(bundle))
+    def _human() -> str:
+        text = format_investigation(bundle)
         if run_id:
             tag = "(cached)" if from_cache else "(saved)"
-            click.echo(f"\nrun_id: {run_id} {tag}")
+            text = f"{text}\n\nrun_id: {run_id} {tag}"
+        return text
+
+    render(Result(json_payload=bundle, human=_human), as_json=as_json)
 
 
 @trees.command(name="deep-dive")
@@ -756,31 +745,30 @@ def _emit_deep_dive(
     run_id: str | None,
     from_cache: bool = False,
 ) -> None:
-    if as_json:
-        click.echo(json.dumps(bundle, indent=2))
-        return
+    def _human() -> str:
+        period = bundle.get("period") or {}
+        targets = bundle.get("trees_requested") or list((bundle.get("trees") or {}).keys())
+        ordered_results = bundle.get("trees") or {}
+        errors = bundle.get("errors") or {}
+        period_label = format_period_label(
+            period.get("current_from") or "",
+            period.get("current_to") or "",
+            period.get("comparison_from") or "",
+            period.get("comparison_to") or "",
+        )
+        lines = [f"Deep-dive across {len(targets)} tree(s) — {period_label}", ""]
+        for tid in targets:
+            lines.append("=" * 72)
+            lines.append(f"Tree: {tid}")
+            lines.append("=" * 72)
+            if tid in ordered_results:
+                lines.append(format_investigation(ordered_results[tid]))
+            else:
+                lines.append(f"  Failed: {errors.get(tid, 'unknown error')}")
+            lines.append("")
+        if run_id:
+            tag = "(cached)" if from_cache else "(saved)"
+            lines.append(f"run_id: {run_id} {tag}")
+        return "\n".join(lines)
 
-    period = bundle.get("period") or {}
-    targets = bundle.get("trees_requested") or list((bundle.get("trees") or {}).keys())
-    ordered_results = bundle.get("trees") or {}
-    errors = bundle.get("errors") or {}
-    period_label = format_period_label(
-        period.get("current_from") or "",
-        period.get("current_to") or "",
-        period.get("comparison_from") or "",
-        period.get("comparison_to") or "",
-    )
-    click.echo(f"Deep-dive across {len(targets)} tree(s) — {period_label}")
-    click.echo("")
-    for tid in targets:
-        click.echo("=" * 72)
-        click.echo(f"Tree: {tid}")
-        click.echo("=" * 72)
-        if tid in ordered_results:
-            click.echo(format_investigation(ordered_results[tid]))
-        else:
-            click.echo(f"  Failed: {errors.get(tid, 'unknown error')}")
-        click.echo("")
-    if run_id:
-        tag = "(cached)" if from_cache else "(saved)"
-        click.echo(f"run_id: {run_id} {tag}")
+    render(Result(json_payload=bundle, human=_human), as_json=as_json)

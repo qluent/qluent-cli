@@ -78,10 +78,26 @@ class FakeClient:
         }
 
     def root_cause_tree(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+        # Mirrors the production client: enrichment is part of the
+        # `root_cause_tree` contract, not a post-processing step.
+        from qluent_cli.rca_contracts import enrich_rca_output
+
         self.calls.append(
             ("root_cause_tree", (tree_id, c_from, c_to, p_from, p_to), kwargs)
         )
-        return {"tree_id": tree_id, "nodes": []}
+        raw = {
+            "tree_id": tree_id,
+            "root_node_id": tree_id,
+            "current_window": {"date_from": c_from, "date_to": c_to},
+            "comparison_window": {"date_from": p_from, "date_to": p_to},
+            "current_value": 100,
+            "comparison_value": 90,
+            "delta_value": 10,
+            "delta_ratio": 0.111,
+            "findings": [],
+            "warnings": [],
+        }
+        return enrich_rca_output(raw, CONFIG)
 
     def elasticity_tree(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
         self.calls.append(
@@ -267,6 +283,23 @@ def test_dispatch_rca_analyze_forwards_metric():
     )
     kwargs = client.calls[0][2]
     assert kwargs["metric"] == "orders"
+
+
+def test_dispatch_rca_analyze_returns_enriched_contract():
+    """MCP must surface the enriched RCA contract, just like the CLI does.
+    Provenance/schema_version cannot be skipped at the dispatch layer."""
+    client = FakeClient()
+    result = asyncio.run(
+        dispatch_tool(
+            "qluent_rca_analyze",
+            {"tree_id": "revenue", "period": "last 7 days"},
+            client=client,
+            config=CONFIG,
+        )
+    )
+    assert result["schema_version"] == "qluent.rca.v1"
+    assert result["contract_kind"] == "deterministic_rca"
+    assert result["provenance"]["project_uuid"] == "project-123"
 
 
 def test_dispatch_elasticity_attaches_provenance():

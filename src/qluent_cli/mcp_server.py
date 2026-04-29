@@ -17,7 +17,6 @@ from qluent_cli import __version__
 from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.elasticity import analyze_elasticity
-from qluent_cli.rca_contracts import enrich_rca_output
 from qluent_cli.runs import run_investigation
 from qluent_cli.suggestions import build_suggestions
 from qluent_cli.utils import parse_filters
@@ -369,7 +368,7 @@ async def _rca_analyze(client: QluentClient, config: QluentConfig, args: dict[st
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
-    data = client.root_cause_tree(
+    return client.root_cause_tree(
         args["tree_id"],
         c_from,
         c_to,
@@ -383,7 +382,6 @@ async def _rca_analyze(client: QluentClient, config: QluentConfig, args: dict[st
         max_segments=int(args.get("max_segments", 5)),
         min_contribution_share=float(args.get("min_contribution_share", 0.1)),
     )
-    return enrich_rca_output(data, config)
 
 
 async def _elasticity(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:

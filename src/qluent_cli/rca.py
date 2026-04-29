@@ -6,7 +6,6 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
-from qluent_cli.rca_contracts import enrich_rca_output
 from qluent_cli.rendering import render, simple_result
 from qluent_cli.formatters import format_root_cause
 from qluent_cli.utils import parse_filters
@@ -78,5 +77,4 @@ def analyze(
         max_segments=max_segments,
         min_contribution_share=min_contribution_share,
     )
-    data = enrich_rca_output(data, config)
     render(simple_result(data, formatter=format_root_cause), as_json=as_json)

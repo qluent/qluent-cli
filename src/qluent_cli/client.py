@@ -15,6 +15,7 @@ import httpx
 
 from qluent_cli.config import QluentConfig
 from qluent_cli.output import echo_status
+from qluent_cli.rca_contracts import RCAOutput, enrich_rca_output
 
 
 _INVESTIGATE_TIMEOUT = 300.0
@@ -318,7 +319,39 @@ class QluentClient:
         max_branching: int = 2,
         max_segments: int = 5,
         min_contribution_share: float = 0.1,
+    ) -> RCAOutput:
+        """Run RCA and return the enriched agent contract.
+
+        The enriched contract — `schema_version`, `provenance`, materiality
+        fields, normalized deltas — is part of the client's interface, not a
+        post-processing step callers must remember.
+        """
+        raw = self._root_cause_raw(
+            tree_id, current_from, current_to, comparison_from, comparison_to,
+            segment_by=segment_by, filters=filters, metric=metric,
+            max_depth=max_depth, max_branching=max_branching,
+            max_segments=max_segments, min_contribution_share=min_contribution_share,
+        )
+        return enrich_rca_output(raw, self._config)
+
+    def _root_cause_raw(
+        self,
+        tree_id: str,
+        current_from: str,
+        current_to: str,
+        comparison_from: str,
+        comparison_to: str,
+        *,
+        segment_by: list[str] | None = None,
+        filters: dict[str, list[str]] | None = None,
+        metric: str | None = None,
+        max_depth: int = 3,
+        max_branching: int = 2,
+        max_segments: int = 5,
+        min_contribution_share: float = 0.1,
     ) -> dict[str, Any]:
+        """Wire-level RCA call. Internal seam for tests; production callers
+        go through `root_cause_tree`."""
         resp = self._client.post(
             f"{self._base}/metric-trees/{tree_id}/root-cause/",
             json=self._rca_body(

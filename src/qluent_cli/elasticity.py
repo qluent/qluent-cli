@@ -7,7 +7,9 @@ from typing import Any
 import click
 
 from qluent_cli.client import QluentClient
+from qluent_cli.client_configs import ElasticityParams
 from qluent_cli.config import QluentConfig, load_config
+from qluent_cli.dates import DateWindow, DateWindows
 from qluent_cli.formatters import format_elasticity
 from qluent_cli.rendering import render, simple_result
 from qluent_cli.utils import parse_filters
@@ -34,16 +36,23 @@ def analyze_elasticity(
     the `qluent_elasticity` MCP tool. Both adapters call into here so they
     cannot drift on contract shape, defaults, or provenance.
     """
+    from datetime import date as _date
+
+    windows = DateWindows(
+        current=DateWindow(_date.fromisoformat(current_from), _date.fromisoformat(current_to)),
+        comparison=DateWindow(
+            _date.fromisoformat(comparison_from), _date.fromisoformat(comparison_to)
+        ),
+    )
     data = client.elasticity_tree(
         tree_id,
-        current_from,
-        current_to,
-        comparison_from,
-        comparison_to,
-        outcome=outcome,
-        lever=lever,
-        dimension=dimension,
-        filters=filters or {},
+        windows=windows,
+        params=ElasticityParams(
+            outcome=outcome,
+            lever=lever,
+            dimension=dimension,
+            filters=filters or {},
+        ),
     )
     data.setdefault("contract_kind", "elasticity_analysis")
     data.setdefault("deterministic", True)

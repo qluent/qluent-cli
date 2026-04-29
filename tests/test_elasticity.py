@@ -17,16 +17,25 @@ class _StubClient:
     def elasticity_tree(
         self,
         tree_id,
-        current_from,
-        current_to,
-        comparison_from,
-        comparison_to,
+        current_from=None,
+        current_to=None,
+        comparison_from=None,
+        comparison_to=None,
         *,
-        outcome,
-        lever,
-        dimension,
-        filters,
+        windows=None,
+        params=None,
+        outcome=None,
+        lever=None,
+        dimension=None,
+        filters=None,
     ):
+        if windows is not None:
+            current_from, current_to, comparison_from, comparison_to = windows.iso_tuple()
+        if params is not None:
+            outcome = outcome or params.outcome
+            lever = lever or params.lever
+            dimension = dimension if dimension is not None else params.dimension
+            filters = filters if filters is not None else dict(params.filters)
         self.captured = {
             "tree_id": tree_id,
             "current_from": current_from,
@@ -127,16 +136,25 @@ def test_elasticity_command_outputs_agent_ready_json(monkeypatch):
     def mock_elasticity_tree(
         self,
         tree_id,
-        current_from,
-        current_to,
-        comparison_from,
-        comparison_to,
+        current_from=None,
+        current_to=None,
+        comparison_from=None,
+        comparison_to=None,
         *,
-        outcome,
-        lever,
-        dimension,
-        filters,
+        windows=None,
+        params=None,
+        outcome=None,
+        lever=None,
+        dimension=None,
+        filters=None,
     ):
+        if windows is not None:
+            current_from, current_to, comparison_from, comparison_to = windows.iso_tuple()
+        if params is not None:
+            outcome = outcome or params.outcome
+            lever = lever or params.lever
+            dimension = dimension if dimension is not None else params.dimension
+            filters = filters if filters is not None else dict(params.filters)
         assert tree_id == "revenue"
         assert outcome == "net_revenue"
         assert lever == "voucher_cost"

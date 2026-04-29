@@ -5,11 +5,15 @@ from __future__ import annotations
 import click
 
 from qluent_cli.client import QluentClient
+from qluent_cli.client_configs import RcaParams
 from qluent_cli.config import load_config
 from qluent_cli.rendering import render, simple_result
 from qluent_cli.formatters import format_root_cause
 from qluent_cli.utils import parse_filters
 from qluent_cli.window_resolver import PeriodResolutionError, resolve_period
+
+
+_DEFAULTS = RcaParams()
 
 
 @click.group()
@@ -25,12 +29,12 @@ def rca() -> None:
 @click.option("--compare", "compare_range", default=None, help="Comparison window as YYYY-MM-DD:YYYY-MM-DD")
 @click.option("--segment-by", "segment_by", multiple=True, help="Dimension to consider for segment RCA (repeatable)")
 @click.option("--filter", "filters", multiple=True, help="Filter as dimension=value (repeatable)")
-@click.option("--max-depth", default=3, type=click.IntRange(1, 6), help="Maximum tree depth to traverse")
-@click.option("--max-branches", default=2, type=click.IntRange(1, 10), help="Maximum child branches to follow per node")
-@click.option("--max-segments", default=5, type=click.IntRange(1, 20), help="Maximum segments to show per node")
+@click.option("--max-depth", default=_DEFAULTS.max_depth, type=click.IntRange(1, 6), help="Maximum tree depth to traverse")
+@click.option("--max-branches", default=_DEFAULTS.max_branching, type=click.IntRange(1, 10), help="Maximum child branches to follow per node")
+@click.option("--max-segments", default=_DEFAULTS.max_segments, type=click.IntRange(1, 20), help="Maximum segments to show per node")
 @click.option(
     "--min-contribution-share",
-    default=0.1,
+    default=_DEFAULTS.min_contribution_share,
     type=click.FloatRange(0.0, 1.0),
     help="Minimum absolute direct contribution share required to follow a child branch",
 )
@@ -58,23 +62,18 @@ def analyze(
         )
     except PeriodResolutionError as exc:
         raise click.ClickException(str(exc)) from exc
-    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
     parsed_filters = parse_filters(filters)
-
-    config = load_config()
-    client = QluentClient(config)
-    data = client.root_cause_tree(
-        tree_id,
-        c_from,
-        c_to,
-        p_from,
-        p_to,
-        segment_by=list(segment_by),
-        filters=parsed_filters,
+    params = RcaParams(
         metric=metric,
+        segment_by=tuple(segment_by),
+        filters=parsed_filters,
         max_depth=max_depth,
         max_branching=max_branches,
         max_segments=max_segments,
         min_contribution_share=min_contribution_share,
     )
+
+    config = load_config()
+    client = QluentClient(config)
+    data = client.root_cause_tree(tree_id, windows=rp.windows, params=params)
     render(simple_result(data, formatter=format_root_cause), as_json=as_json)

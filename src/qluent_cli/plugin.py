@@ -1,9 +1,11 @@
-"""Claude Code plugin install bootstrap.
+"""Claude Code plugin install + sync.
 
 Wraps `claude plugin marketplace add` / `install` so `qluent login` can offer a
-one-time install of the qluent Claude Code plugin. Plugin lifecycle (updates,
-version tracking) is owned by Claude Code's `/plugin marketplace update` flow;
-this module deliberately does not check or manage plugin versions.
+one-time install of the qluent Claude Code plugin, and `claude plugin
+marketplace update` / `claude plugin update` so each subsequent login pulls the
+latest published plugin version. Plugin lifecycle is owned by Claude Code's
+marketplace flow — this module never inspects, caches, or compares plugin
+versions; it just shells out to Claude Code's idempotent commands.
 """
 
 from __future__ import annotations
@@ -95,6 +97,20 @@ def install_claude_plugin() -> bool:
     ))
 
 
+def sync_claude_plugin() -> bool:
+    """Refresh marketplace metadata and pull the latest plugin version.
+
+    Idempotent — no-ops cleanly when nothing has changed upstream. Run from the
+    login path on every successful login so users don't have to remember to
+    invoke `/plugin marketplace update` manually (third-party marketplaces
+    have auto-update off by default in Claude Code).
+    """
+    return _run_steps((
+        ["claude", "plugin", "marketplace", "update", MARKETPLACE_NAME],
+        ["claude", "plugin", "update", PLUGIN_ID],
+    ))
+
+
 def _manual_hint() -> str:
     return (
         "Install Claude Code (https://claude.ai/code), then run:\n"
@@ -111,16 +127,17 @@ def _refresh_tip() -> str:
 
 
 def offer_claude_plugin_install(install_plugin: bool | None) -> None:
-    """Install the qluent Claude Code plugin if it isn't already, or skip.
+    """Install or sync the qluent Claude Code plugin.
 
     install_plugin:
-      - True  : install without prompting
+      - True  : install/sync without prompting
       - False : skip silently
-      - None  : prompt (default Yes)
+      - None  : prompt for install if missing; sync silently if already present
 
-    When the plugin is already installed, prints a static refresh tip pointing
-    at Claude Code's own `/plugin marketplace update` flow. We do not compare
-    versions or trigger updates ourselves.
+    When the plugin is already installed, runs `sync_claude_plugin()` to pull
+    any newer published version. On sync failure, falls back to a static tip
+    pointing at Claude Code's own `/plugin marketplace update` flow so the
+    user has a recourse without blocking login.
     """
     if install_plugin is False:
         return
@@ -133,7 +150,10 @@ def offer_claude_plugin_install(install_plugin: bool | None) -> None:
         return
 
     if is_claude_plugin_installed():
-        echo_status(_refresh_tip())
+        if sync_claude_plugin():
+            echo_status(f"Claude Code plugin synced: {PLUGIN_ID}")
+        else:
+            echo_status(_refresh_tip())
         return
 
     if install_plugin is None and not click.confirm(

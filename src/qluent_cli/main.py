@@ -517,27 +517,6 @@ def claude_init(target_path: str, force: bool) -> None:
     _agents_init_impl(as_kind="claude", target_path=target_path, force=force)
 
 
-@claude.command("update")
-def claude_update() -> None:
-    """Refresh the qluent Claude Code plugin to the latest version."""
-    from qluent_cli.plugin import (
-        PLUGIN_ID,
-        claude_cli_available,
-        update_claude_plugin,
-    )
-
-    if not claude_cli_available():
-        raise click.ClickException(
-            "Claude Code CLI not found on PATH. Install it from https://claude.ai/code "
-            "and try again."
-        )
-
-    if not update_claude_plugin():
-        raise click.ClickException("Plugin update failed. See messages above.")
-
-    echo_status(f"Claude Code plugin up to date: {PLUGIN_ID}")
-
-
 cli.add_command(claude)
 
 

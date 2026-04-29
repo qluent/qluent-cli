@@ -1,13 +1,13 @@
-"""Claude Code plugin auto-install helpers.
+"""Claude Code plugin install bootstrap.
 
-Wraps `claude plugin marketplace add` / `install` / `update` so qluent
-commands can wire up (or refresh) the Claude Code plugin without the user
-having to run the slash commands manually.
+Wraps `claude plugin marketplace add` / `install` so `qluent login` can offer a
+one-time install of the qluent Claude Code plugin. Plugin lifecycle (updates,
+version tracking) is owned by Claude Code's `/plugin marketplace update` flow;
+this module deliberately does not check or manage plugin versions.
 """
 
 from __future__ import annotations
 
-import re
 import shutil
 import subprocess
 
@@ -18,9 +18,6 @@ from qluent_cli.output import echo_status
 MARKETPLACE_SOURCE = "qluent/qluent-plugin-cc"
 MARKETPLACE_NAME = "qluent-metric-trees"
 PLUGIN_ID = f"qluent@{MARKETPLACE_NAME}"
-
-# Bumped alongside qluent-plugin-cc releases.
-RECOMMENDED_CLAUDE_PLUGIN_VERSION = "0.3.0"
 
 
 def claude_cli_available() -> bool:
@@ -78,48 +75,12 @@ def _capture(cmd: list[str], *, timeout: int = _LIST_TIMEOUT_SECONDS) -> str | N
     return stdout or ""
 
 
-def get_installed_claude_plugin_version() -> str | None:
-    """Return the installed qluent plugin version, or None if not installed.
-
-    Parses `claude plugin list`, looking for a `qluent@qluent-metric-trees`
-    block followed (within a few lines) by a `Version: X.Y.Z` entry.
-    """
+def is_claude_plugin_installed() -> bool:
+    """Return True if `claude plugin list` mentions the qluent plugin."""
     output = _capture(["claude", "plugin", "list"])
     if output is None:
-        return None
-    lines = output.splitlines()
-    for idx, line in enumerate(lines):
-        if PLUGIN_ID not in line:
-            continue
-        # Look at the next few lines for a Version: entry.
-        for follow in lines[idx : idx + 5]:
-            match = re.search(r"Version:\s*([0-9][0-9A-Za-z.\-+]*)", follow)
-            if match:
-                return match.group(1)
-    return None
-
-
-def _parse_version(value: str) -> tuple[int, ...] | None:
-    """Parse a dotted numeric version into a tuple of ints.
-
-    Returns None if the value doesn't start with a numeric component.
-    Trailing pre-release/build tags (e.g. "1.2.3-rc1") are ignored.
-    """
-    head = re.split(r"[-+]", value, maxsplit=1)[0]
-    parts = head.split(".")
-    try:
-        return tuple(int(p) for p in parts if p)
-    except ValueError:
-        return None
-
-
-def _is_older(installed: str, recommended: str) -> bool:
-    """Return True when `installed` is strictly older than `recommended`."""
-    a = _parse_version(installed)
-    b = _parse_version(recommended)
-    if a is None or b is None:
         return False
-    return a < b
+    return PLUGIN_ID in output
 
 
 def install_claude_plugin() -> bool:
@@ -134,18 +95,6 @@ def install_claude_plugin() -> bool:
     ))
 
 
-def update_claude_plugin() -> bool:
-    """Refresh the marketplace and pull the latest plugin version.
-
-    Runs `claude plugin marketplace update <name>` then `claude plugin update
-    <plugin>`. No-ops cleanly when nothing has changed upstream.
-    """
-    return _run_steps((
-        ["claude", "plugin", "marketplace", "update", MARKETPLACE_NAME],
-        ["claude", "plugin", "update", PLUGIN_ID],
-    ))
-
-
 def _manual_hint() -> str:
     return (
         "Install Claude Code (https://claude.ai/code), then run:\n"
@@ -154,29 +103,24 @@ def _manual_hint() -> str:
     )
 
 
-def _prompt_and_update(installed: str, recommended: str, assume_yes: bool) -> None:
-    echo_status("")
-    echo_status("Claude Code plugin update available")
-    echo_status(f"  Installed:    {PLUGIN_ID} {installed}")
-    echo_status(f"  Recommended:  {PLUGIN_ID} {recommended}")
-
-    if not assume_yes and not click.confirm("Update now?", default=True):
-        echo_status("Skipped. Run `qluent claude update` to update later.")
-        return
-
-    if update_claude_plugin():
-        echo_status(f"Claude Code plugin updated to {recommended}: {PLUGIN_ID}")
-    else:
-        echo_status("Plugin update failed. Run `qluent claude update` to retry.")
+def _refresh_tip() -> str:
+    return (
+        f"Tip: in Claude Code, run /plugin marketplace update {MARKETPLACE_NAME} "
+        "to refresh the qluent plugin."
+    )
 
 
 def offer_claude_plugin_install(install_plugin: bool | None) -> None:
-    """Install, update, or skip the qluent Claude Code plugin.
+    """Install the qluent Claude Code plugin if it isn't already, or skip.
 
     install_plugin:
-      - True  : install/update without prompting
+      - True  : install without prompting
       - False : skip silently
       - None  : prompt (default Yes)
+
+    When the plugin is already installed, prints a static refresh tip pointing
+    at Claude Code's own `/plugin marketplace update` flow. We do not compare
+    versions or trigger updates ourselves.
     """
     if install_plugin is False:
         return
@@ -188,23 +132,13 @@ def offer_claude_plugin_install(install_plugin: bool | None) -> None:
             echo_status("Claude Code CLI not detected. " + _manual_hint())
         return
 
-    installed = get_installed_claude_plugin_version()
-
-    if installed is None:
-        if install_plugin is None and not click.confirm(
-            "Install the qluent plugin in Claude Code?", default=True
-        ):
-            return
-        if install_claude_plugin():
-            echo_status(f"Claude Code plugin ready: {PLUGIN_ID}")
+    if is_claude_plugin_installed():
+        echo_status(_refresh_tip())
         return
 
-    if _is_older(installed, RECOMMENDED_CLAUDE_PLUGIN_VERSION):
-        _prompt_and_update(
-            installed,
-            RECOMMENDED_CLAUDE_PLUGIN_VERSION,
-            assume_yes=install_plugin is True,
-        )
+    if install_plugin is None and not click.confirm(
+        "Install the qluent plugin in Claude Code?", default=True
+    ):
         return
-
-    echo_status(f"Claude Code plugin up to date: {PLUGIN_ID} {installed}")
+    if install_claude_plugin():
+        echo_status(f"Claude Code plugin ready: {PLUGIN_ID}")

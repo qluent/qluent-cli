@@ -16,6 +16,7 @@ import click
 from qluent_cli import sessions
 from qluent_cli.client import QluentClient
 from qluent_cli.client_configs import InvestigationParams
+from qluent_cli.command_runner import qluent_command
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.rendering import Result, render, simple_result
 from qluent_cli.run_manager import RunManager
@@ -250,31 +251,28 @@ def _collect_trend_evaluations(
 
 @trees.command(name="list")
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
-def list_trees(as_json: bool) -> None:
+@qluent_command
+def list_trees(client, config, *, as_json: bool) -> Result:
     """List available metric trees."""
-    client = QluentClient(load_config())
-    data = client.list_trees()
-    render(simple_result(data, formatter=format_tree_list), as_json=as_json)
+    return simple_result(client.list_trees(), formatter=format_tree_list)
 
 
 @trees.command()
 @click.argument("tree_id")
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
-def get(tree_id: str, as_json: bool) -> None:
+@qluent_command
+def get(client, config, tree_id: str, *, as_json: bool) -> Result:
     """Show the structure of a metric tree."""
-    client = QluentClient(load_config())
-    data = client.get_tree(tree_id)
-    render(simple_result(data, formatter=format_tree_detail), as_json=as_json)
+    return simple_result(client.get_tree(tree_id), formatter=format_tree_detail)
 
 
 @trees.command()
 @click.argument("tree_id")
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
-def validate(tree_id: str, as_json: bool) -> None:
+@qluent_command
+def validate(client, config, tree_id: str, *, as_json: bool) -> Result:
     """Validate a saved metric tree against its referenced metric SQL."""
-    client = QluentClient(load_config())
-    data = client.validate_tree(tree_id)
-    render(simple_result(data, formatter=format_tree_validation), as_json=as_json)
+    return simple_result(client.validate_tree(tree_id), formatter=format_tree_validation)
 
 
 @trees.command()

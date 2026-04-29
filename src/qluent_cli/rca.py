@@ -6,11 +6,12 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.client_configs import RcaParams
+from qluent_cli.command_runner import qluent_command
 from qluent_cli.config import load_config
-from qluent_cli.rendering import render, simple_result
+from qluent_cli.rendering import Result, simple_result
 from qluent_cli.formatters import format_root_cause
 from qluent_cli.utils import parse_filters
-from qluent_cli.window_resolver import PeriodResolutionError, resolve_period
+from qluent_cli.window_resolver import resolve_period
 
 
 _DEFAULTS = RcaParams()
@@ -39,7 +40,10 @@ def rca() -> None:
     help="Minimum absolute direct contribution share required to follow a child branch",
 )
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+@qluent_command
 def analyze(
+    client,
+    config,
     tree_id: str,
     metric: str | None,
     period: str | None,
@@ -51,29 +55,23 @@ def analyze(
     max_branches: int,
     max_segments: int,
     min_contribution_share: float,
+    *,
     as_json: bool,
-) -> None:
+) -> Result:
     """Run deterministic root-cause analysis for a metric tree."""
-    try:
-        rp = resolve_period(
-            period=period,
-            current_range=current_range,
-            compare_range=compare_range,
-        )
-    except PeriodResolutionError as exc:
-        raise click.ClickException(str(exc)) from exc
-    parsed_filters = parse_filters(filters)
+    rp = resolve_period(
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
+    )
     params = RcaParams(
         metric=metric,
         segment_by=tuple(segment_by),
-        filters=parsed_filters,
+        filters=parse_filters(filters),
         max_depth=max_depth,
         max_branching=max_branches,
         max_segments=max_segments,
         min_contribution_share=min_contribution_share,
     )
-
-    config = load_config()
-    client = QluentClient(config)
     data = client.root_cause_tree(tree_id, windows=rp.windows, params=params)
-    render(simple_result(data, formatter=format_root_cause), as_json=as_json)
+    return simple_result(data, formatter=format_root_cause)

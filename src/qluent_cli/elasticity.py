@@ -8,12 +8,13 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.client_configs import ElasticityParams
+from qluent_cli.command_runner import qluent_command
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.dates import DateWindow, DateWindows
 from qluent_cli.formatters import format_elasticity
-from qluent_cli.rendering import render, simple_result
+from qluent_cli.rendering import Result, simple_result
 from qluent_cli.utils import parse_filters
-from qluent_cli.window_resolver import PeriodResolutionError, resolve_period
+from qluent_cli.window_resolver import resolve_period
 
 
 def analyze_elasticity(
@@ -87,7 +88,10 @@ def analyze_elasticity(
 @click.option("--compare", "compare_range", default=None, help="Comparison window as YYYY-MM-DD:YYYY-MM-DD")
 @click.option("--filter", "filters", multiple=True, help="Filter as dimension=value (repeatable)")
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+@qluent_command
 def elasticity(
+    client,
+    config,
     tree_id: str,
     outcome: str,
     lever: str,
@@ -96,20 +100,16 @@ def elasticity(
     current_range: str | None,
     compare_range: str | None,
     filters: tuple[str, ...],
+    *,
     as_json: bool,
-) -> None:
+) -> Result:
     """Analyze observed elasticity between a lever and an outcome metric."""
-    try:
-        rp = resolve_period(
-            period=period,
-            current_range=current_range,
-            compare_range=compare_range,
-        )
-    except PeriodResolutionError as exc:
-        raise click.ClickException(str(exc)) from exc
+    rp = resolve_period(
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
+    )
     c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
-    config = load_config()
-    client = QluentClient(config)
     data = analyze_elasticity(
         client,
         config,
@@ -123,5 +123,4 @@ def elasticity(
         comparison_to=p_to,
         filters=parse_filters(filters),
     )
-
-    render(simple_result(data, formatter=format_elasticity), as_json=as_json)
+    return simple_result(data, formatter=format_elasticity)

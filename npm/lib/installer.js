@@ -96,8 +96,7 @@ const TRUSTED_PUBLIC_KEYS = [
   "a77fa57c27605d474e172ed4473996980cf7c96e78b06bdb07f8ad210d13e7b9",
 ];
 
-// Set to true once all active releases include .sha256.sig files.
-const SIGNATURE_REQUIRED = false;
+const SIGNATURE_REQUIRED = true;
 
 function download(url, destination, { env = process.env, redirectsRemaining = 5, maxSize = MAX_BINARY_SIZE } = {}) {
   const safeUrl = assertSecureUrl(url, { env }).toString();
@@ -311,6 +310,16 @@ async function installBinary({
     );
   }
 
+  if (
+    env.QLUENT_CLI_SKIP_SIGNATURE_VERIFICATION === "1" &&
+    !allowInsecureDownload(env)
+  ) {
+    throw new Error(
+      "Refusing to skip signature verification outside local development. " +
+        "Set QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD=1 only for local development."
+    );
+  }
+
   const binaryName = platform === "win32" ? "qluent.exe" : "qluent";
   const destination = path.join(binDir, binaryName);
   const tempDestination = `${destination}.tmp`;
@@ -337,25 +346,12 @@ async function installBinary({
       );
     } else {
       const signatureUrl = resolveSignatureUrl(checksumUrl);
-      try {
-        const signatureBody = await downloadText(signatureUrl, {
-          env,
-          maxSize: MAX_SIGNATURE_SIZE,
-        });
-        verifySignature(checksumBody, signatureBody, { trustedKeys });
-        logger.log("Signature verification passed");
-      } catch (sigError) {
-        if (
-          SIGNATURE_REQUIRED ||
-          !sigError.message.includes("Download failed with status")
-        ) {
-          throw sigError;
-        }
-        logger.log(
-          "WARNING: Signature file not found. " +
-            "Signature verification will be required in a future release."
-        );
-      }
+      const signatureBody = await downloadText(signatureUrl, {
+        env,
+        maxSize: MAX_SIGNATURE_SIZE,
+      });
+      verifySignature(checksumBody, signatureBody, { trustedKeys });
+      logger.log("Signature verification passed");
     }
 
     const expectedChecksum = parseChecksumFile(

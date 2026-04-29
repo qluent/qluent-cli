@@ -109,7 +109,9 @@ class RunRecord:
 def _connect() -> sqlite3.Connection:
     index = _index_path()
     index.parent.mkdir(parents=True, exist_ok=True)
+    index.parent.chmod(0o700)
     conn = sqlite3.connect(str(index))
+    index.chmod(0o600)
     conn.row_factory = sqlite3.Row
     conn.execute(
         """
@@ -181,6 +183,10 @@ def record_run(
 
     base = _sessions_dir() / f"{now:%Y/%m/%d}"
     base.mkdir(parents=True, exist_ok=True)
+    _sessions_dir().chmod(0o700)
+    for parent in base.relative_to(_sessions_dir()).parents:
+        (_sessions_dir() / parent).chmod(0o700)
+    base.chmod(0o700)
     file_name = f"{_safe_filename_component(tree_id)}-{run_id}.json"
     path = base / file_name
 
@@ -202,6 +208,7 @@ def record_run(
     }
     with open(path, "w") as f:
         json.dump(file_payload, f, indent=2, default=str)
+    path.chmod(0o600)
 
     try:
         with _connect() as conn:

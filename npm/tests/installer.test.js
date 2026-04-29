@@ -888,8 +888,8 @@ test("MAX_SIGNATURE_SIZE has a sane default", () => {
   assert.equal(MAX_SIGNATURE_SIZE, 256);
 });
 
-test("SIGNATURE_REQUIRED is false during transition", () => {
-  assert.equal(SIGNATURE_REQUIRED, false);
+test("SIGNATURE_REQUIRED is true for production installs", () => {
+  assert.equal(SIGNATURE_REQUIRED, true);
 });
 
 // ---------------------------------------------------------------------------
@@ -1033,7 +1033,7 @@ test("installBinary cleans up .tmp on signature verification failure", async () 
   }
 });
 
-test("installBinary warns but succeeds when .sig is missing and SIGNATURE_REQUIRED is false", async () => {
+test("installBinary fails when .sig is missing", async () => {
   const server = await createTestServer();
   const tempDir = makeTempDir();
   const binDir = path.join(tempDir, "bin");
@@ -1057,21 +1057,21 @@ test("installBinary warns but succeeds when .sig is missing and SIGNATURE_REQUIR
   });
 
   try {
-    const dest = await installBinary({
-      version: "1.0.0",
-      env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
-      binDir,
-      platform: "darwin",
-      arch: "arm64",
-      logger,
-      trustedKeys: [generateSigningKeyPair().publicKeyHex],
-    });
-
-    assert.ok(fs.existsSync(dest));
-    assert.ok(
-      logger.messages.some((m) => m.includes("Signature file not found")),
-      "expected a warning about missing signature"
+    await assert.rejects(
+      () =>
+        installBinary({
+          version: "1.0.0",
+          env: insecureEnv({ QLUENT_CLI_DIST_BASE_URL: server.url }),
+          binDir,
+          platform: "darwin",
+          arch: "arm64",
+          logger,
+          trustedKeys: [generateSigningKeyPair().publicKeyHex],
+        }),
+      /Download failed with status 404/
     );
+    assert.equal(fs.existsSync(path.join(binDir, "qluent")), false);
+    assert.equal(fs.existsSync(path.join(binDir, "qluent.tmp")), false);
   } finally {
     server.close();
   }
@@ -1120,4 +1120,25 @@ test("installBinary skips signature check when QLUENT_CLI_SKIP_SIGNATURE_VERIFIC
   } finally {
     server.close();
   }
+});
+
+test("installBinary refuses to skip signature check outside local development", async () => {
+  const tempDir = makeTempDir();
+  const binDir = path.join(tempDir, "bin");
+
+  await assert.rejects(
+    () =>
+      installBinary({
+        version: "1.0.0",
+        env: {
+          QLUENT_CLI_SKIP_SIGNATURE_VERIFICATION: "1",
+          QLUENT_CLI_BIN_URL: "https://example.com/qluent",
+        },
+        binDir,
+        platform: "darwin",
+        arch: "arm64",
+        logger: captureLogger(),
+      }),
+    /Refusing to skip signature verification/
+  );
 });

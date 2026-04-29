@@ -107,7 +107,7 @@ class RunManager:
         )
         return RunResult(
             bundle=bundle,
-            run_id=record.run_id if record else sessions.generate_run_id(),
+            run_id=record.run_id if record else None,
             from_cache=False,
         )
 

@@ -54,7 +54,7 @@ class _FakeClient:
         return dict(self.bundle)
 
 
-def test_run_manager_investigate_returns_bundle_with_run_id():
+def test_run_manager_investigate_returns_bundle_without_run_id_when_not_persisted():
     client = _FakeClient()
     manager = RunManager(client, _config(), persist=False)
 
@@ -65,7 +65,7 @@ def test_run_manager_investigate_returns_bundle_with_run_id():
     )
 
     assert isinstance(result, RunResult)
-    assert result.run_id is not None
+    assert result.run_id is None
     assert result.bundle["tree_id"] == "growth"
     assert result.from_cache is False
 
@@ -161,6 +161,7 @@ def test_run_manager_continues_when_persist_fails(monkeypatch, capsys):
 
     # bundle still flows through
     assert result.bundle["tree_id"] == "growth"
+    assert result.run_id is None
     err = capsys.readouterr().err
     assert "failed to persist run" in err.lower()
 

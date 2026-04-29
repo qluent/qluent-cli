@@ -8,10 +8,10 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import QluentConfig, load_config
-from qluent_cli.dates import resolve_windows
 from qluent_cli.formatters import format_elasticity
 from qluent_cli.rendering import render, simple_result
 from qluent_cli.utils import parse_filters
+from qluent_cli.window_resolver import PeriodResolutionError, resolve_period
 
 
 def analyze_elasticity(
@@ -90,7 +90,15 @@ def elasticity(
     as_json: bool,
 ) -> None:
     """Analyze observed elasticity between a lever and an outcome metric."""
-    windows = resolve_windows(period, current_range, compare_range)
+    try:
+        rp = resolve_period(
+            period=period,
+            current_range=current_range,
+            compare_range=compare_range,
+        )
+    except PeriodResolutionError as exc:
+        raise click.ClickException(str(exc)) from exc
+    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
     config = load_config()
     client = QluentClient(config)
     data = analyze_elasticity(
@@ -100,10 +108,10 @@ def elasticity(
         outcome=outcome,
         lever=lever,
         dimension=dimension,
-        current_from=windows.current.iso_from,
-        current_to=windows.current.iso_to,
-        comparison_from=windows.comparison.iso_from,
-        comparison_to=windows.comparison.iso_to,
+        current_from=c_from,
+        current_to=c_to,
+        comparison_from=p_from,
+        comparison_to=p_to,
         filters=parse_filters(filters),
     )
 

@@ -43,6 +43,15 @@ class DateWindows:
     current: DateWindow
     comparison: DateWindow
 
+    def iso_tuple(self) -> tuple[str, str, str, str]:
+        """Return `(current_from, current_to, comparison_from, comparison_to)`."""
+        return (
+            self.current.iso_from,
+            self.current.iso_to,
+            self.comparison.iso_from,
+            self.comparison.iso_to,
+        )
+
 
 def resolve_windows(
     period: str | None,

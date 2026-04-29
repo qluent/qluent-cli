@@ -6,11 +6,11 @@ import click
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
-from qluent_cli.dates import resolve_windows
 from qluent_cli.rca_contracts import enrich_rca_output
 from qluent_cli.rendering import render, simple_result
 from qluent_cli.formatters import format_root_cause
 from qluent_cli.utils import parse_filters
+from qluent_cli.window_resolver import PeriodResolutionError, resolve_period
 
 
 @click.group()
@@ -51,9 +51,15 @@ def analyze(
     as_json: bool,
 ) -> None:
     """Run deterministic root-cause analysis for a metric tree."""
-    windows = resolve_windows(period, current_range, compare_range)
-    c_from, c_to = windows.current.iso_from, windows.current.iso_to
-    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
+    try:
+        rp = resolve_period(
+            period=period,
+            current_range=current_range,
+            compare_range=compare_range,
+        )
+    except PeriodResolutionError as exc:
+        raise click.ClickException(str(exc)) from exc
+    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
     parsed_filters = parse_filters(filters)
 
     config = load_config()

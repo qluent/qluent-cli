@@ -30,8 +30,11 @@ from qluent_cli.formatters import (
     format_tree_list,
     format_tree_validation,
 )
-from qluent_cli.dates import resolve_windows
 from qluent_cli.utils import parse_filters
+from qluent_cli.window_resolver import (
+    PeriodResolutionError,
+    resolve_period,
+)
 
 
 @click.group()
@@ -43,38 +46,29 @@ def _profile_for(config: QluentConfig) -> str:
     return f"{config.user_email}@{config.api_url}"
 
 
-def _resume_or_last(
+def _resolve_period_or_raise(
     *,
     command: str,
-    resume: str | None,
-    use_last: bool,
-    tree_id: str | None,
-) -> sessions.RunRecord | None:
-    """Resolve --resume / --last to a stored run; raises if requested but missing."""
-    if resume and use_last:
-        raise click.ClickException("Use either --resume or --last, not both.")
-    if resume:
-        record = sessions.get_run(resume)
-        if record is None:
-            raise click.ClickException(f"No run found for run_id={resume}")
-        if record.command != command:
-            raise click.ClickException(
-                f"Run {resume} is a {record.command!r} run, not {command!r}."
-            )
-        if tree_id and record.tree_id and record.tree_id != tree_id:
-            raise click.ClickException(
-                f"Run {resume} is for tree {record.tree_id!r}, not {tree_id!r}."
-            )
-        return record
-    if use_last:
-        record = sessions.find_last_run(command=command, tree_id=tree_id)
-        if record is None:
-            target = f" for {tree_id}" if tree_id else ""
-            raise click.ClickException(
-                f"No prior {command!r} run{target} found. Run it once to populate the cache."
-            )
-        return record
-    return None
+    period: str | None = None,
+    current_range: str | None = None,
+    compare_range: str | None = None,
+    resume: str | None = None,
+    use_last: bool = False,
+    tree_id: str | None = None,
+):
+    """Click-flavoured wrapper around `window_resolver.resolve_period`."""
+    try:
+        return resolve_period(
+            period=period,
+            current_range=current_range,
+            compare_range=compare_range,
+            resume=resume,
+            use_last=use_last,
+            command=command,
+            tree_id=tree_id,
+        )
+    except PeriodResolutionError as exc:
+        raise click.ClickException(str(exc)) from exc
 
 
 def _persist_run_safely(**kwargs):
@@ -299,9 +293,13 @@ def evaluate(
     """Evaluate a metric tree over date windows."""
     if as_json and contract_output:
         raise click.ClickException("Use either --json-output or --contract-output, not both.")
-    windows = resolve_windows(period, current_range, compare_range)
-    c_from, c_to = windows.current.iso_from, windows.current.iso_to
-    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
+    rp = _resolve_period_or_raise(
+        command=sessions.INVESTIGATE_COMMAND,
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
+    )
+    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
     config = load_config()
     client = QluentClient(config)
     data = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
@@ -340,9 +338,13 @@ def levers(
     as_json: bool,
 ) -> None:
     """Quantify top lever impacts from tree elasticities."""
-    windows = resolve_windows(period, current_range, compare_range)
-    c_from, c_to = windows.current.iso_from, windows.current.iso_to
-    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
+    rp = _resolve_period_or_raise(
+        command=sessions.INVESTIGATE_COMMAND,
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
+    )
+    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
     client = QluentClient(load_config())
     evaluation = client.evaluate_tree(tree_id, c_from, c_to, p_from, p_to)
     data = _build_lever_analysis(evaluation, top_n=top, scenarios=scenarios)
@@ -383,9 +385,13 @@ def compare(
     as_json: bool,
 ) -> None:
     """Compare multiple metric trees side by side for the same period."""
-    windows = resolve_windows(period, current_range, compare_range)
-    c_from, c_to = windows.current.iso_from, windows.current.iso_to
-    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
+    rp = _resolve_period_or_raise(
+        command=sessions.INVESTIGATE_COMMAND,
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
+    )
+    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
 
     client = QluentClient(load_config())
     results: list[tuple[str, dict[str, Any]]] = []
@@ -447,23 +453,24 @@ def investigate(
     use_last: bool,
 ) -> None:
     """Run a deterministic multi-step investigation bundle for a tree."""
-    cached = _resume_or_last(
+    rp = _resolve_period_or_raise(
         command=sessions.INVESTIGATE_COMMAND,
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
         resume=resume,
         use_last=use_last,
         tree_id=tree_id,
     )
-    if cached is not None:
-        bundle = cached.load().get("result") or {}
-        _emit_investigation(bundle, as_json=as_json, run_id=cached.run_id, from_cache=True)
+    if rp.cached_run is not None:
+        bundle = rp.cached_run.load().get("result") or {}
+        _emit_investigation(bundle, as_json=as_json, run_id=rp.cached_run.run_id, from_cache=True)
         return
 
     config = load_config()
     client = QluentClient(config)
     parsed_filters = parse_filters(filters)
-    windows = resolve_windows(period, current_range, compare_range)
-    c_from, c_to = windows.current.iso_from, windows.current.iso_to
-    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
+    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
     period_label = format_period_label(c_from, c_to, p_from, p_to)
     reporter = RunReporter(
         command="investigate",
@@ -604,22 +611,23 @@ def deep_dive(
     use_last: bool,
 ) -> None:
     """Run investigations across every tree in parallel and bundle the results."""
-    cached = _resume_or_last(
+    rp = _resolve_period_or_raise(
         command=sessions.DEEP_DIVE_COMMAND,
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
         resume=resume,
         use_last=use_last,
         tree_id=None,
     )
-    if cached is not None:
-        bundle = cached.load().get("result") or {}
-        _emit_deep_dive(bundle, as_json=as_json, run_id=cached.run_id, from_cache=True)
+    if rp.cached_run is not None:
+        bundle = rp.cached_run.load().get("result") or {}
+        _emit_deep_dive(bundle, as_json=as_json, run_id=rp.cached_run.run_id, from_cache=True)
         return
 
     config = load_config()
     client = QluentClient(config)
-    windows = resolve_windows(period, current_range, compare_range)
-    c_from, c_to = windows.current.iso_from, windows.current.iso_to
-    p_from, p_to = windows.comparison.iso_from, windows.comparison.iso_to
+    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
 
     trees_data = client.list_trees()
     available = [t.get("id") for t in trees_data.get("trees", []) if t.get("id")]

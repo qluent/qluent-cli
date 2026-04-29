@@ -261,7 +261,9 @@ def test_investigate_persists_run_and_resumable(isolated_config, monkeypatch):
 
     api_calls: list[str] = []
 
-    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def mock_investigate(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         api_calls.append(tree_id)
         return {
             "tree_id": tree_id,
@@ -322,7 +324,9 @@ def test_investigate_stream_completion_run_id_is_resumable(isolated_config, monk
 
     api_calls: list[str] = []
 
-    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def mock_investigate(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         api_calls.append(tree_id)
         return {
             "tree_id": tree_id,
@@ -437,7 +441,9 @@ def test_deep_dive_persists_run(isolated_config, monkeypatch):
         },
     )
 
-    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def mock_investigate(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         return {"tree_id": tree_id, "agent": {}}
 
     monkeypatch.setattr(

@@ -225,7 +225,7 @@ def test_rca_analyze_formats_root_cause_output(monkeypatch):
             "warnings": [],
         }
 
-    monkeypatch.setattr("qluent_cli.rca.QluentClient.root_cause_tree", mock_root_cause_tree)
+    monkeypatch.setattr("qluent_cli.rca.QluentClient._root_cause_raw", mock_root_cause_tree)
 
     result = CliRunner().invoke(
         cli,
@@ -335,7 +335,7 @@ def test_rca_json_output_enriches_materiality_and_provenance(monkeypatch):
             "warnings": [],
         }
 
-    monkeypatch.setattr("qluent_cli.rca.QluentClient.root_cause_tree", mock_root_cause_tree)
+    monkeypatch.setattr("qluent_cli.rca.QluentClient._root_cause_raw", mock_root_cause_tree)
 
     result = CliRunner().invoke(
         cli,

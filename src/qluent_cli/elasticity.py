@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import click
 
 from qluent_cli.client import QluentClient
+from qluent_cli.client_configs import ElasticityParams
+from qluent_cli.command_runner import qluent_command
 from qluent_cli.config import QluentConfig, load_config
-from qluent_cli.dates import resolve_windows
+from qluent_cli.dates import DateWindow, DateWindows
 from qluent_cli.formatters import format_elasticity
+from qluent_cli.rendering import Result, simple_result
 from qluent_cli.utils import parse_filters
+from qluent_cli.window_resolver import resolve_period
 
 
 def analyze_elasticity(
@@ -34,16 +37,23 @@ def analyze_elasticity(
     the `qluent_elasticity` MCP tool. Both adapters call into here so they
     cannot drift on contract shape, defaults, or provenance.
     """
+    from datetime import date as _date
+
+    windows = DateWindows(
+        current=DateWindow(_date.fromisoformat(current_from), _date.fromisoformat(current_to)),
+        comparison=DateWindow(
+            _date.fromisoformat(comparison_from), _date.fromisoformat(comparison_to)
+        ),
+    )
     data = client.elasticity_tree(
         tree_id,
-        current_from,
-        current_to,
-        comparison_from,
-        comparison_to,
-        outcome=outcome,
-        lever=lever,
-        dimension=dimension,
-        filters=filters or {},
+        windows=windows,
+        params=ElasticityParams(
+            outcome=outcome,
+            lever=lever,
+            dimension=dimension,
+            filters=filters or {},
+        ),
     )
     data.setdefault("contract_kind", "elasticity_analysis")
     data.setdefault("deterministic", True)
@@ -78,7 +88,10 @@ def analyze_elasticity(
 @click.option("--compare", "compare_range", default=None, help="Comparison window as YYYY-MM-DD:YYYY-MM-DD")
 @click.option("--filter", "filters", multiple=True, help="Filter as dimension=value (repeatable)")
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
+@qluent_command
 def elasticity(
+    client,
+    config,
     tree_id: str,
     outcome: str,
     lever: str,
@@ -87,12 +100,16 @@ def elasticity(
     current_range: str | None,
     compare_range: str | None,
     filters: tuple[str, ...],
+    *,
     as_json: bool,
-) -> None:
+) -> Result:
     """Analyze observed elasticity between a lever and an outcome metric."""
-    windows = resolve_windows(period, current_range, compare_range)
-    config = load_config()
-    client = QluentClient(config)
+    rp = resolve_period(
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
+    )
+    c_from, c_to, p_from, p_to = rp.windows.iso_tuple()
     data = analyze_elasticity(
         client,
         config,
@@ -100,14 +117,10 @@ def elasticity(
         outcome=outcome,
         lever=lever,
         dimension=dimension,
-        current_from=windows.current.iso_from,
-        current_to=windows.current.iso_to,
-        comparison_from=windows.comparison.iso_from,
-        comparison_to=windows.comparison.iso_to,
+        current_from=c_from,
+        current_to=c_to,
+        comparison_from=p_from,
+        comparison_to=p_to,
         filters=parse_filters(filters),
     )
-
-    if as_json:
-        click.echo(json.dumps(data, indent=2))
-    else:
-        click.echo(format_elasticity(data))
+    return simple_result(data, formatter=format_elasticity)

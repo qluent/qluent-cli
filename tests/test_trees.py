@@ -459,8 +459,10 @@ def test_trees_investigate_delegates_to_server(monkeypatch):
     investigate_calls: list[dict] = []
 
     def mock_investigate_tree(
-        self, tree_id, c_from, c_to, p_from, p_to, **kwargs
+        self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs
     ):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         investigate_calls.append({"tree_id": tree_id, "c_from": c_from, **kwargs})
         return {
             "tree_id": tree_id,
@@ -513,8 +515,10 @@ def test_trees_investigate_delegates_to_server(monkeypatch):
     assert payload["agent"]["status"] == "resolved"
     assert len(investigate_calls) == 1
     assert investigate_calls[0]["tree_id"] == "revenue"
-    assert investigate_calls[0]["compare_trees"] == ["orders"]
-    assert investigate_calls[0]["filters"] == {"country": ["SE"]}
+    # InvestigationParams now carries these — they used to be raw kwargs.
+    params = investigate_calls[0]["params"]
+    assert list(params.compare_trees) == ["orders"]
+    assert params.filters == {"country": ["SE"]}
 
 
 def test_trees_investigate_converts_metric_compare_recommendation(monkeypatch):
@@ -544,7 +548,7 @@ def test_trees_investigate_converts_metric_compare_recommendation(monkeypatch):
     )
     monkeypatch.setattr(
         "qluent_cli.trees.QluentClient.investigate_tree",
-        lambda self, tree_id, c_from, c_to, p_from, p_to, **kwargs: {
+        lambda self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs: {
             "tree_id": tree_id,
             "tree_label": "Revenue",
             "agent": {
@@ -610,7 +614,7 @@ def test_trees_investigate_strips_invalid_compare_recommendation(monkeypatch):
     )
     monkeypatch.setattr(
         "qluent_cli.trees.QluentClient.investigate_tree",
-        lambda self, tree_id, c_from, c_to, p_from, p_to, **kwargs: {
+        lambda self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs: {
             "tree_id": tree_id,
             "tree_label": "Revenue",
             "agent": {
@@ -646,7 +650,9 @@ def test_trees_investigate_keeps_json_on_stdout_and_progress_on_stderr(monkeypat
         "qluent_cli.trees.QluentClient.list_trees",
         lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
     )
-    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def mock_investigate(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         kwargs["progress_callback"]("awaiting_api", 30.0)
         return {
             "tree_id": tree_id,
@@ -673,7 +679,7 @@ def test_quiet_suppresses_investigate_progress(monkeypatch):
     )
     monkeypatch.setattr(
         "qluent_cli.trees.QluentClient.investigate_tree",
-        lambda self, tree_id, c_from, c_to, p_from, p_to, **kwargs: {
+        lambda self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs: {
             "tree_id": tree_id,
             "agent": {},
         },
@@ -697,7 +703,7 @@ def test_trees_investigate_stream_emits_jsonl(monkeypatch):
     )
     monkeypatch.setattr(
         "qluent_cli.trees.QluentClient.investigate_tree",
-        lambda self, tree_id, c_from, c_to, p_from, p_to, **kwargs: {
+        lambda self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs: {
             "tree_id": tree_id,
             "agent": {"status": "resolved"},
         },
@@ -761,7 +767,9 @@ def test_trees_deep_dive_runs_all_trees(monkeypatch):
 
     calls: list[str] = []
 
-    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def mock_investigate(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         calls.append(tree_id)
         return {
             "tree_id": tree_id,
@@ -808,7 +816,9 @@ def test_trees_deep_dive_filters_to_requested_trees(monkeypatch):
     )
     calls: list[str] = []
 
-    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def mock_investigate(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         calls.append(tree_id)
         return {"tree_id": tree_id, "agent": {}}
 
@@ -874,7 +884,9 @@ def test_trees_deep_dive_captures_per_tree_errors(monkeypatch):
         },
     )
 
-    def mock_investigate(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def mock_investigate(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         if tree_id == "growth":
             raise RuntimeError("upstream timeout")
         return {"tree_id": tree_id, "agent": {}}

@@ -15,13 +15,13 @@ from typing import Any, Awaitable, Callable
 
 from qluent_cli import __version__
 from qluent_cli.client import QluentClient
+from qluent_cli.client_configs import RcaParams
 from qluent_cli.config import QluentConfig, load_config
-from qluent_cli.dates import resolve_windows
 from qluent_cli.elasticity import analyze_elasticity
-from qluent_cli.rca_contracts import enrich_rca_output
 from qluent_cli.runs import run_investigation
 from qluent_cli.suggestions import build_suggestions
 from qluent_cli.utils import parse_filters
+from qluent_cli.window_resolver import resolve_period
 
 
 SERVER_NAME = "qluent"
@@ -55,13 +55,11 @@ def _resolve_dates(
     current_range: str | None,
     compare_range: str | None,
 ) -> tuple[str, str, str, str]:
-    windows = resolve_windows(period, current_range, compare_range)
-    return (
-        windows.current.iso_from,
-        windows.current.iso_to,
-        windows.comparison.iso_from,
-        windows.comparison.iso_to,
-    )
+    return resolve_period(
+        period=period,
+        current_range=current_range,
+        compare_range=compare_range,
+    ).windows.iso_tuple()
 
 
 def _filter_schema() -> dict[str, Any]:
@@ -371,21 +369,25 @@ async def _rca_analyze(client: QluentClient, config: QluentConfig, args: dict[st
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
-    data = client.root_cause_tree(
+    defaults = RcaParams()
+    return client.root_cause_tree(
         args["tree_id"],
         c_from,
         c_to,
         p_from,
         p_to,
-        segment_by=list(args.get("segment_by") or []),
-        filters=_filters_from_arg(args.get("filters")),
-        metric=args.get("metric"),
-        max_depth=int(args.get("max_depth", 3)),
-        max_branching=int(args.get("max_branches", 2)),
-        max_segments=int(args.get("max_segments", 5)),
-        min_contribution_share=float(args.get("min_contribution_share", 0.1)),
+        params=RcaParams(
+            metric=args.get("metric"),
+            segment_by=tuple(args.get("segment_by") or ()),
+            filters=_filters_from_arg(args.get("filters")),
+            max_depth=int(args.get("max_depth", defaults.max_depth)),
+            max_branching=int(args.get("max_branches", defaults.max_branching)),
+            max_segments=int(args.get("max_segments", defaults.max_segments)),
+            min_contribution_share=float(
+                args.get("min_contribution_share", defaults.min_contribution_share)
+            ),
+        ),
     )
-    return enrich_rca_output(data, config)
 
 
 async def _elasticity(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:

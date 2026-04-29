@@ -127,7 +127,7 @@ def test_root_cause_tree_sends_metric_when_provided(monkeypatch):
         )
     )
 
-    result = client.root_cause_tree(
+    result = client._root_cause_raw(
         "revenue",
         "2026-03-09",
         "2026-03-15",

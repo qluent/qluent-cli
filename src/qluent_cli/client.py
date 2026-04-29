@@ -13,8 +13,16 @@ from typing import Any
 
 import httpx
 
+from qluent_cli.client_configs import (
+    ElasticityParams,
+    InvestigationParams,
+    RcaParams,
+    rca_params_to_kwargs,
+)
 from qluent_cli.config import QluentConfig
+from qluent_cli.dates import DateWindows
 from qluent_cli.output import echo_status
+from qluent_cli.rca_contracts import RCAOutput, enrich_rca_output
 
 
 _INVESTIGATE_TIMEOUT = 300.0
@@ -143,6 +151,94 @@ def _build_transport() -> httpx.BaseTransport:
     return _RetryTransport(httpx.HTTPTransport())
 
 
+def _windows_to_iso(
+    windows: DateWindows | None,
+    current_from: str | None,
+    current_to: str | None,
+    comparison_from: str | None,
+    comparison_to: str | None,
+) -> tuple[str, str, str, str]:
+    """Accept either a `DateWindows` or four positional ISO strings."""
+    if windows is not None:
+        return windows.iso_tuple()
+    if not all([current_from, current_to, comparison_from, comparison_to]):
+        raise TypeError(
+            "Pass either `windows=DateWindows(...)` or all four of "
+            "current_from/current_to/comparison_from/comparison_to."
+        )
+    return current_from, current_to, comparison_from, comparison_to  # type: ignore[return-value]
+
+
+def _merge_rca_params(
+    params: RcaParams | None,
+    *,
+    segment_by: list[str] | None,
+    filters: dict[str, list[str]] | None,
+    metric: str | None,
+    max_depth: int | None,
+    max_branching: int | None,
+    max_segments: int | None,
+    min_contribution_share: float | None,
+) -> RcaParams:
+    """Take an explicit `RcaParams`, falling back to per-kwarg overrides
+    when none was provided. Kwargs are kept for adapters that build
+    their params iteratively (CLI Click options); the dataclass is the
+    canonical shape."""
+    if params is None:
+        params = RcaParams()
+    return RcaParams(
+        metric=metric if metric is not None else params.metric,
+        segment_by=tuple(segment_by) if segment_by is not None else params.segment_by,
+        filters=dict(filters) if filters is not None else params.filters,
+        max_depth=max_depth if max_depth is not None else params.max_depth,
+        max_branching=max_branching if max_branching is not None else params.max_branching,
+        max_segments=max_segments if max_segments is not None else params.max_segments,
+        min_contribution_share=(
+            min_contribution_share
+            if min_contribution_share is not None
+            else params.min_contribution_share
+        ),
+    )
+
+
+def _merge_investigation_params(
+    params: InvestigationParams | None,
+    *,
+    trend_periods: int | None,
+    trend_grain: str | None,
+    trend_as_of: str | None,
+    segment_by: list[str] | None,
+    filters: dict[str, list[str]] | None,
+    metric: str | None,
+    compare_trees: list[str] | None,
+    max_depth: int | None,
+    max_branching: int | None,
+    max_segments: int | None,
+    min_contribution_share: float | None,
+) -> InvestigationParams:
+    if params is None:
+        params = InvestigationParams()
+    return InvestigationParams(
+        metric=metric if metric is not None else params.metric,
+        segment_by=tuple(segment_by) if segment_by is not None else params.segment_by,
+        filters=dict(filters) if filters is not None else params.filters,
+        max_depth=max_depth if max_depth is not None else params.max_depth,
+        max_branching=max_branching if max_branching is not None else params.max_branching,
+        max_segments=max_segments if max_segments is not None else params.max_segments,
+        min_contribution_share=(
+            min_contribution_share
+            if min_contribution_share is not None
+            else params.min_contribution_share
+        ),
+        trend_periods=trend_periods if trend_periods is not None else params.trend_periods,
+        trend_grain=trend_grain if trend_grain is not None else params.trend_grain,
+        trend_as_of=trend_as_of if trend_as_of is not None else params.trend_as_of,
+        compare_trees=(
+            tuple(compare_trees) if compare_trees is not None else params.compare_trees
+        ),
+    )
+
+
 class QluentClient:
     """Thin wrapper around the Qluent external API."""
 
@@ -229,14 +325,19 @@ class QluentClient:
     def evaluate_tree(
         self,
         tree_id: str,
-        current_from: str,
-        current_to: str,
-        comparison_from: str,
-        comparison_to: str,
+        current_from: str | None = None,
+        current_to: str | None = None,
+        comparison_from: str | None = None,
+        comparison_to: str | None = None,
+        *,
+        windows: DateWindows | None = None,
     ) -> dict[str, Any]:
+        c_from, c_to, p_from, p_to = _windows_to_iso(
+            windows, current_from, current_to, comparison_from, comparison_to
+        )
         resp = self._client.post(
             f"{self._base}/metric-trees/{tree_id}/evaluate/",
-            json=self._window_body(current_from, current_to, comparison_from, comparison_to),
+            json=self._window_body(c_from, c_to, p_from, p_to),
         )
         resp.raise_for_status()
         return resp.json()
@@ -244,22 +345,24 @@ class QluentClient:
     def investigate_tree(
         self,
         tree_id: str,
-        current_from: str,
-        current_to: str,
-        comparison_from: str,
-        comparison_to: str,
+        current_from: str | None = None,
+        current_to: str | None = None,
+        comparison_from: str | None = None,
+        comparison_to: str | None = None,
         *,
-        trend_periods: int = 4,
-        trend_grain: str = "week",
+        windows: DateWindows | None = None,
+        params: InvestigationParams | None = None,
+        trend_periods: int | None = None,
+        trend_grain: str | None = None,
         trend_as_of: str | None = None,
         segment_by: list[str] | None = None,
         filters: dict[str, list[str]] | None = None,
         metric: str | None = None,
         compare_trees: list[str] | None = None,
-        max_depth: int = 3,
-        max_branching: int = 2,
-        max_segments: int = 5,
-        min_contribution_share: float = 0.1,
+        max_depth: int | None = None,
+        max_branching: int | None = None,
+        max_segments: int | None = None,
+        min_contribution_share: float | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> dict[str, Any]:
         """Run a full server-side investigation bundle.
@@ -269,17 +372,29 @@ class QluentClient:
         `_PROGRESS_INTERVAL_SECONDS` until the POST returns. The thread is
         torn down before the response is returned, regardless of outcome.
         """
-        body = self._rca_body(
-            current_from, current_to, comparison_from, comparison_to,
-            segment_by=segment_by, filters=filters, metric=metric,
-            max_depth=max_depth, max_branching=max_branching,
-            max_segments=max_segments, min_contribution_share=min_contribution_share,
+        c_from, c_to, p_from, p_to = _windows_to_iso(
+            windows, current_from, current_to, comparison_from, comparison_to
         )
+        merged = _merge_investigation_params(
+            params,
+            trend_periods=trend_periods,
+            trend_grain=trend_grain,
+            trend_as_of=trend_as_of,
+            segment_by=segment_by,
+            filters=filters,
+            metric=metric,
+            compare_trees=compare_trees,
+            max_depth=max_depth,
+            max_branching=max_branching,
+            max_segments=max_segments,
+            min_contribution_share=min_contribution_share,
+        )
+        body = self._rca_body(c_from, c_to, p_from, p_to, **rca_params_to_kwargs(merged.as_rca()))
         body.update({
-            "trend_periods": trend_periods,
-            "trend_grain": trend_grain,
-            "trend_as_of": trend_as_of,
-            "compare_trees": compare_trees or [],
+            "trend_periods": merged.trend_periods,
+            "trend_grain": merged.trend_grain,
+            "trend_as_of": merged.trend_as_of,
+            "compare_trees": list(merged.compare_trees),
         })
         url = f"{self._base}/metric-trees/{tree_id}/investigate/"
 
@@ -306,6 +421,48 @@ class QluentClient:
     def root_cause_tree(
         self,
         tree_id: str,
+        current_from: str | None = None,
+        current_to: str | None = None,
+        comparison_from: str | None = None,
+        comparison_to: str | None = None,
+        *,
+        windows: DateWindows | None = None,
+        params: RcaParams | None = None,
+        segment_by: list[str] | None = None,
+        filters: dict[str, list[str]] | None = None,
+        metric: str | None = None,
+        max_depth: int | None = None,
+        max_branching: int | None = None,
+        max_segments: int | None = None,
+        min_contribution_share: float | None = None,
+    ) -> RCAOutput:
+        """Run RCA and return the enriched agent contract.
+
+        The enriched contract — `schema_version`, `provenance`, materiality
+        fields, normalized deltas — is part of the client's interface, not a
+        post-processing step callers must remember.
+        """
+        c_from, c_to, p_from, p_to = _windows_to_iso(
+            windows, current_from, current_to, comparison_from, comparison_to
+        )
+        merged = _merge_rca_params(
+            params,
+            segment_by=segment_by,
+            filters=filters,
+            metric=metric,
+            max_depth=max_depth,
+            max_branching=max_branching,
+            max_segments=max_segments,
+            min_contribution_share=min_contribution_share,
+        )
+        raw = self._root_cause_raw(
+            tree_id, c_from, c_to, p_from, p_to, **rca_params_to_kwargs(merged),
+        )
+        return enrich_rca_output(raw, self._config)
+
+    def _root_cause_raw(
+        self,
+        tree_id: str,
         current_from: str,
         current_to: str,
         comparison_from: str,
@@ -319,6 +476,8 @@ class QluentClient:
         max_segments: int = 5,
         min_contribution_share: float = 0.1,
     ) -> dict[str, Any]:
+        """Wire-level RCA call. Internal seam for tests; production callers
+        go through `root_cause_tree`."""
         resp = self._client.post(
             f"{self._base}/metric-trees/{tree_id}/root-cause/",
             json=self._rca_body(
@@ -334,24 +493,35 @@ class QluentClient:
     def elasticity_tree(
         self,
         tree_id: str,
-        current_from: str,
-        current_to: str,
-        comparison_from: str,
-        comparison_to: str,
+        current_from: str | None = None,
+        current_to: str | None = None,
+        comparison_from: str | None = None,
+        comparison_to: str | None = None,
         *,
-        outcome: str,
-        lever: str,
+        windows: DateWindows | None = None,
+        params: ElasticityParams | None = None,
+        outcome: str | None = None,
+        lever: str | None = None,
         dimension: str | None = None,
         filters: dict[str, list[str]] | None = None,
     ) -> dict[str, Any]:
-        body = self._window_body(current_from, current_to, comparison_from, comparison_to)
+        c_from, c_to, p_from, p_to = _windows_to_iso(
+            windows, current_from, current_to, comparison_from, comparison_to
+        )
+        merged_outcome = params.outcome if params else outcome
+        merged_lever = params.lever if params else lever
+        merged_dimension = params.dimension if params and dimension is None else dimension
+        merged_filters = (
+            dict(params.filters) if params and filters is None else (filters or {})
+        )
+        body = self._window_body(c_from, c_to, p_from, p_to)
         body.update({
-            "outcome": outcome,
-            "lever": lever,
-            "dimension": dimension,
-            "filters": filters or {},
+            "outcome": merged_outcome,
+            "lever": merged_lever,
+            "dimension": merged_dimension,
+            "filters": merged_filters,
         })
-        if dimension is None:
+        if merged_dimension is None:
             body.pop("dimension")
         resp = self._client.post(
             f"{self._base}/metric-trees/{tree_id}/elasticity/",

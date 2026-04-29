@@ -55,13 +55,17 @@ class FakeClient:
         self.calls.append(("get_tree", (tree_id,), {}))
         return {"id": tree_id, "nodes": []}
 
-    def evaluate_tree(self, tree_id, c_from, c_to, p_from, p_to):
+    def evaluate_tree(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, *, windows=None):
+        if windows is not None:
+            c_from, c_to, p_from, p_to = windows.iso_tuple()
         self.calls.append(
             ("evaluate_tree", (tree_id, c_from, c_to, p_from, p_to), {})
         )
         return {"tree_id": tree_id, "current_value": 100.0, "comparison_value": 90.0}
 
-    def investigate_tree(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def investigate_tree(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         self.calls.append(
             ("investigate_tree", (tree_id, c_from, c_to, p_from, p_to), kwargs)
         )
@@ -77,13 +81,33 @@ class FakeClient:
             },
         }
 
-    def root_cause_tree(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def root_cause_tree(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        # Mirrors the production client: enrichment is part of the
+        # `root_cause_tree` contract, not a post-processing step.
+        from qluent_cli.rca_contracts import enrich_rca_output
+
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         self.calls.append(
             ("root_cause_tree", (tree_id, c_from, c_to, p_from, p_to), kwargs)
         )
-        return {"tree_id": tree_id, "nodes": []}
+        raw = {
+            "tree_id": tree_id,
+            "root_node_id": tree_id,
+            "current_window": {"date_from": c_from, "date_to": c_to},
+            "comparison_window": {"date_from": p_from, "date_to": p_to},
+            "current_value": 100,
+            "comparison_value": 90,
+            "delta_value": 10,
+            "delta_ratio": 0.111,
+            "findings": [],
+            "warnings": [],
+        }
+        return enrich_rca_output(raw, CONFIG)
 
-    def elasticity_tree(self, tree_id, c_from, c_to, p_from, p_to, **kwargs):
+    def elasticity_tree(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        if kwargs.get("windows") is not None:
+            c_from, c_to, p_from, p_to = kwargs["windows"].iso_tuple()
         self.calls.append(
             ("elasticity_tree", (tree_id, c_from, c_to, p_from, p_to), kwargs)
         )
@@ -266,7 +290,25 @@ def test_dispatch_rca_analyze_forwards_metric():
         )
     )
     kwargs = client.calls[0][2]
-    assert kwargs["metric"] == "orders"
+    # metric now travels inside the typed params object.
+    assert kwargs["params"].metric == "orders"
+
+
+def test_dispatch_rca_analyze_returns_enriched_contract():
+    """MCP must surface the enriched RCA contract, just like the CLI does.
+    Provenance/schema_version cannot be skipped at the dispatch layer."""
+    client = FakeClient()
+    result = asyncio.run(
+        dispatch_tool(
+            "qluent_rca_analyze",
+            {"tree_id": "revenue", "period": "last 7 days"},
+            client=client,
+            config=CONFIG,
+        )
+    )
+    assert result["schema_version"] == "qluent.rca.v1"
+    assert result["contract_kind"] == "deterministic_rca"
+    assert result["provenance"]["project_uuid"] == "project-123"
 
 
 def test_dispatch_elasticity_attaches_provenance():

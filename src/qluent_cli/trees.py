@@ -15,8 +15,10 @@ import click
 
 from qluent_cli import sessions
 from qluent_cli.client import QluentClient
+from qluent_cli.client_configs import InvestigationParams
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.rendering import Result, render, simple_result
+from qluent_cli.run_manager import RunManager
 from qluent_cli.runs import RunReporter, run_investigation
 from qluent_cli.tree_contracts import build_tree_query_contract
 from qluent_cli.formatters import (
@@ -480,67 +482,35 @@ def investigate(
     )
     if stream or not as_json:
         reporter.start()
-    trees_data = client.list_trees()
-    if stream or not as_json:
-        reporter.progress("awaiting_api")
 
-    bundle = run_investigation(
-        client,
-        tree_id=tree_id,
-        current_from=c_from,
-        current_to=c_to,
-        comparison_from=p_from,
-        comparison_to=p_to,
-        trees_data=trees_data,
-        progress_callback=lambda stage, elapsed: reporter.progress(stage, elapsed=elapsed),
-        trend_periods=trend_periods,
-        trend_grain=trend_grain,
-        trend_as_of=trend_as_of,
-        segment_by=list(segment_by),
+    params = InvestigationParams(
+        segment_by=tuple(segment_by),
         filters=parsed_filters,
-        compare_trees=list(compare_trees),
+        compare_trees=tuple(compare_trees),
         max_depth=max_depth,
         max_branching=max_branches,
         max_segments=max_segments,
         min_contribution_share=min_contribution_share,
+        trend_periods=trend_periods,
+        trend_grain=trend_grain,
+        trend_as_of=trend_as_of,
     )
-    if stream or not as_json:
-        reporter.progress("formatting")
-
-    record = _persist_run_safely(
-        command=sessions.INVESTIGATE_COMMAND,
-        tree_id=tree_id,
-        period_start=c_from,
-        period_end=c_to,
-        comparison_start=p_from,
-        comparison_end=p_to,
-        profile=_profile_for(config),
-        client_safe=config.client_safe,
-        args={
-            "period": period,
-            "current": current_range,
-            "compare": compare_range,
-            "trend_periods": trend_periods,
-            "trend_grain": trend_grain,
-            "trend_as_of": trend_as_of,
-            "segment_by": list(segment_by),
-            "filters": parsed_filters,
-            "compare_trees": list(compare_trees),
-            "max_depth": max_depth,
-            "max_branches": max_branches,
-            "max_segments": max_segments,
-            "min_contribution_share": min_contribution_share,
-        },
-        payload=bundle,
+    manager = RunManager(client, config, persist=True)
+    result = manager.investigate(
+        tree_id,
+        windows=rp.windows,
+        params=params,
+        reporter=reporter,
+        original_args={"period": period, "current": current_range, "compare": compare_range},
     )
 
     if stream:
-        reporter.complete(bundle, run_id=record.run_id if record else None)
+        reporter.complete(result.bundle, run_id=result.run_id)
         return
     _emit_investigation(
-        bundle,
+        result.bundle,
         as_json=as_json,
-        run_id=record.run_id if record else None,
+        run_id=result.run_id,
     )
 
 

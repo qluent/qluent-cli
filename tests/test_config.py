@@ -14,6 +14,8 @@ def test_default_client_safe_prefers_hosted_urls():
     assert config_module.default_client_safe("http://[::1]:8001") is False
     assert config_module.default_client_safe("http://localhost.evil.example") is True
     assert config_module.default_client_safe("http://127.0.0.1.evil.example") is True
+    assert config_module.default_client_safe("http://localhost@evil.example") is True
+    assert config_module.default_client_safe("http://127.0.0.1@evil.example") is True
 
 
 def test_load_config_defaults_to_production_api_url(isolated_config):
@@ -77,6 +79,8 @@ def test_load_config_rejects_http_non_local_url(isolated_config):
     [
         "http://localhost.evil.example",
         "http://127.0.0.1.evil.example",
+        "http://localhost@evil.example",
+        "http://127.0.0.1@evil.example",
     ],
 )
 def test_load_config_rejects_http_loopback_prefix_spoof(api_url, isolated_config):

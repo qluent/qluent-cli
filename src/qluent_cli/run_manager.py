@@ -28,6 +28,7 @@ from qluent_cli.client import QluentClient
 from qluent_cli.client_configs import InvestigationParams
 from qluent_cli.config import QluentConfig
 from qluent_cli.dates import DateWindows
+from qluent_cli.investigation_contracts import InvestigationBundle
 from qluent_cli.runs import (
     RunReporter,
     collect_tree_metadata,
@@ -39,7 +40,7 @@ from qluent_cli.runs import (
 class RunResult:
     """The finished result of an investigation."""
 
-    bundle: dict[str, Any]
+    bundle: InvestigationBundle
     run_id: str | None
     from_cache: bool = False
 
@@ -120,7 +121,7 @@ class RunManager:
         p_from: str,
         p_to: str,
         params: InvestigationParams,
-        bundle: dict[str, Any],
+        bundle: InvestigationBundle,
         original_args: dict[str, Any],
     ):
         if not self._persist:

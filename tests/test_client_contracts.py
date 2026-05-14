@@ -123,3 +123,46 @@ def test_root_cause_tree_enrichment_does_not_double_apply():
     assert result["schema_version"] == "qluent.rca.v1"
     # Provenance still set exactly once.
     assert isinstance(result["provenance"], dict)
+
+
+def test_investigate_tree_accepts_optional_analysis_run_uuid():
+    """The investigate response is a passthrough contract; new backend handles
+    must survive client parsing unchanged."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "tree_id": "revenue",
+                "analysis_run_uuid": "9f7d8d21-1e04-43a8-a33e-2cf7d22d2c2b",
+                "agent": {"status": "resolved"},
+            },
+        )
+
+    client = _client_with_mock_transport(handler)
+    result = client.investigate_tree(
+        "revenue",
+        "2026-03-09",
+        "2026-03-15",
+        "2026-03-02",
+        "2026-03-08",
+    )
+
+    assert result["analysis_run_uuid"] == "9f7d8d21-1e04-43a8-a33e-2cf7d22d2c2b"
+
+
+def test_investigate_tree_accepts_legacy_response_without_analysis_run_uuid():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"tree_id": "revenue", "agent": {}})
+
+    client = _client_with_mock_transport(handler)
+    result = client.investigate_tree(
+        "revenue",
+        "2026-03-09",
+        "2026-03-15",
+        "2026-03-02",
+        "2026-03-08",
+    )
+
+    assert result["tree_id"] == "revenue"
+    assert "analysis_run_uuid" not in result

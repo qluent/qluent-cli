@@ -32,6 +32,7 @@ from typing import Any
 import click
 
 from qluent_cli.client import ProgressCallback, QluentClient
+from qluent_cli.investigation_contracts import InvestigationBundle
 from qluent_cli.output import echo_status
 
 
@@ -254,7 +255,7 @@ def run_investigation(
     trees_data: dict[str, Any] | None = None,
     progress_callback: ProgressCallback | None = None,
     **investigation_kwargs: Any,
-) -> dict[str, Any]:
+) -> InvestigationBundle:
     """Run one tree investigation and return the sanitized bundle.
 
     The single shared seam between the CLI and MCP adapters. `trees_data`

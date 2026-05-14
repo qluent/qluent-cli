@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 from click.testing import CliRunner
 
@@ -519,6 +520,119 @@ def test_trees_investigate_delegates_to_server(monkeypatch):
     params = investigate_calls[0]["params"]
     assert list(params.compare_trees) == ["orders"]
     assert params.filters == {"country": ["SE"]}
+
+
+def test_trees_investigate_json_preserves_analysis_run_uuid(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
+    )
+    monkeypatch.setattr(
+        "qluent_cli.run_manager.sessions.record_run",
+        lambda **kwargs: SimpleNamespace(run_id="LOCALRUN12345678"),
+    )
+
+    def mock_investigate(self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs):
+        return {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "analysis_run_uuid": "9f7d8d21-1e04-43a8-a33e-2cf7d22d2c2b",
+            "agent": {"status": "resolved"},
+        }
+
+    monkeypatch.setattr("qluent_cli.trees.QluentClient.investigate_tree", mock_investigate)
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "investigate",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+            "--json-output",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["analysis_run_uuid"] == "9f7d8d21-1e04-43a8-a33e-2cf7d22d2c2b"
+
+
+def test_trees_investigate_human_surfaces_analysis_run_uuid(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
+    )
+    monkeypatch.setattr(
+        "qluent_cli.run_manager.sessions.record_run",
+        lambda **kwargs: SimpleNamespace(run_id="LOCALRUN12345678"),
+    )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree",
+        lambda self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs: {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "analysis_run_uuid": "9f7d8d21-1e04-43a8-a33e-2cf7d22d2c2b",
+            "agent": {"status": "resolved"},
+        },
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "investigate",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Analysis run: 9f7d8d21-1e04-43a8-a33e-2cf7d22d2c2b" in result.output
+
+
+def test_trees_investigate_human_allows_legacy_response_without_analysis_run(monkeypatch):
+    _stub_config(monkeypatch)
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.list_trees",
+        lambda self: {"trees": [{"id": "revenue", "nodes": []}]},
+    )
+    monkeypatch.setattr(
+        "qluent_cli.run_manager.sessions.record_run",
+        lambda **kwargs: SimpleNamespace(run_id="LOCALRUN12345678"),
+    )
+    monkeypatch.setattr(
+        "qluent_cli.trees.QluentClient.investigate_tree",
+        lambda self, tree_id, c_from=None, c_to=None, p_from=None, p_to=None, **kwargs: {
+            "tree_id": tree_id,
+            "tree_label": "Revenue",
+            "agent": {"status": "resolved"},
+        },
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        [
+            "trees",
+            "investigate",
+            "revenue",
+            "--current",
+            "2026-03-09:2026-03-15",
+            "--compare",
+            "2026-03-02:2026-03-08",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Analysis run:" not in result.output
 
 
 def test_trees_investigate_converts_metric_compare_recommendation(monkeypatch):

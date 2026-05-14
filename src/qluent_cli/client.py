@@ -21,6 +21,7 @@ from qluent_cli.client_configs import (
 )
 from qluent_cli.config import QluentConfig
 from qluent_cli.dates import DateWindows
+from qluent_cli.investigation_contracts import InvestigationBundle
 from qluent_cli.output import echo_status
 from qluent_cli.rca_contracts import RCAOutput, enrich_rca_output
 
@@ -364,7 +365,7 @@ class QluentClient:
         max_segments: int | None = None,
         min_contribution_share: float | None = None,
         progress_callback: ProgressCallback | None = None,
-    ) -> dict[str, Any]:
+    ) -> InvestigationBundle:
         """Run a full server-side investigation bundle.
 
         If `progress_callback` is supplied, a daemon thread emits an

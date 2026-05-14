@@ -33,6 +33,8 @@ def _fmt_header(data: dict[str, Any], lines: list[str]) -> str:
     lines.extend([f"{tree_label} Investigation", ""])
     if data.get("period_label"):
         lines.append(f"  Period: {data['period_label']}")
+    if data.get("analysis_run_uuid"):
+        lines.append(f"  Analysis run: {data['analysis_run_uuid']}")
     if data.get("segment_by_used"):
         lines.append("  Segment cuts: " + ", ".join(data["segment_by_used"]))
     if data.get("filters"):

@@ -1,3 +1,3 @@
 """Qluent CLI — metric tree analysis from the command line."""
 
-__version__ = "0.1.14"
+__version__ = "0.1.15"

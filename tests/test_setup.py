@@ -67,6 +67,52 @@ def test_setup_uses_production_default_api_url(monkeypatch, isolated_config, tmp
     assert saved["api_url"] == config_module.DEFAULT_API_URL
 
 
+def test_config_local_flag_saves_local_api_url(isolated_config):
+    _config_dir, config_file = isolated_config
+
+    result = CliRunner().invoke(
+        cli,
+        ["config", "--api-key", "qk_test", "--local"],
+    )
+
+    assert result.exit_code == 0
+    saved = json.loads(config_file.read_text())
+    assert saved["api_url"] == config_module.LOCAL_API_URL
+    assert saved["api_key"] == "qk_test"
+
+
+def test_config_local_flag_overrides_existing_remote_url(isolated_config):
+    config_dir, config_file = isolated_config
+    config_dir.mkdir()
+    config_file.write_text(
+        json.dumps(
+            {
+                "api_key": "qk_existing",
+                "api_url": "https://api.example.com",
+                "project_uuid": "project-123",
+                "user_email": "user@example.com",
+            }
+        )
+    )
+
+    result = CliRunner().invoke(cli, ["config", "--local"])
+
+    assert result.exit_code == 0
+    saved = json.loads(config_file.read_text())
+    assert saved["api_url"] == config_module.LOCAL_API_URL
+    assert saved["api_key"] == "qk_existing"
+
+
+def test_config_local_and_url_are_mutually_exclusive(isolated_config):
+    result = CliRunner().invoke(
+        cli,
+        ["config", "--url", "https://api.example.com", "--local"],
+    )
+
+    assert result.exit_code != 0
+    assert "Use either --url or --local, not both." in result.output
+
+
 def test_setup_local_flag_prefills_local_api_url(monkeypatch, isolated_config, tmp_path):
     _config_dir, config_file = isolated_config
     monkeypatch.chdir(tmp_path)

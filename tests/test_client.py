@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
+
 import click
 import httpx
 import pytest
 
-from qluent_cli.client import QluentClient, _RetryTransport
+from qluent_cli.client import QluentClient, QueryStreamUnsupported, _RetryTransport
 from qluent_cli.config import QluentConfig
 
 
@@ -464,3 +466,113 @@ def test_retry_log_suppressed_by_click_quiet(capsys, monkeypatch):
     with click.Context(click.Command("qluent"), obj={"quiet": True}):
         _default_log(1, 3, "502", 0.5)
     assert capsys.readouterr().err == ""
+
+
+def _make_query_client(handler) -> QluentClient:
+    """Build a QluentClient backed by a MockTransport for wire-level tests."""
+    config = QluentConfig(
+        api_key="qk_test",
+        api_url="https://api.example.com",
+        project_uuid="project-123",
+        user_email="user@example.com",
+    )
+    client = QluentClient(config)
+    client._client = httpx.Client(
+        headers={"X-API-Key": "qk_test"},
+        transport=httpx.MockTransport(handler),
+    )
+    return client
+
+
+def test_query_posts_question_and_thread():
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"success": True, "thread_id": "th_1"})
+
+    client = _make_query_client(handler)
+    result = client.query("top customers?", thread_id="th_0")
+
+    assert result == {"success": True, "thread_id": "th_1"}
+    assert captured["url"] == "https://api.example.com/api/v1/project/project-123/query/"
+    assert captured["json"] == {
+        "question": "top customers?",
+        "user_email": "user@example.com",
+        "thread_id": "th_0",
+    }
+
+
+def test_query_omits_thread_id_when_absent():
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(200, json={"success": True})
+
+    client = _make_query_client(handler)
+    client.query("q")
+
+    assert "thread_id" not in captured["json"]
+
+
+def test_query_returns_422_clarification_payload_without_raising():
+    payload = {
+        "success": False,
+        "thread_id": "th_2",
+        "error_code": "CLARIFICATION_NEEDED",
+        "clarification": {"message": "Which one?", "questions": ["A", "B"]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json=payload)
+
+    client = _make_query_client(handler)
+
+    assert client.query("q") == payload
+
+
+def test_iter_query_events_parses_sse_frames():
+    body = (
+        b'event: status\ndata: {"message": "Starting...", "request_id": "r1"}\n\n'
+        b": keepalive comment\n\n"
+        b'event: status\ndata: {"message": "Generating SQL", "stage": "sql_generation"}\n\n'
+        b'event: sql\ndata: {"sql": "SELECT 1"}\n\n'
+        b'event: result\ndata: {"success": true, "thread_id": "th_1", "data": []}\n\n'
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert str(request.url).endswith("/query/stream")
+        assert json.loads(request.content)["question"] == "q"
+        return httpx.Response(
+            200, content=body, headers={"Content-Type": "text/event-stream"}
+        )
+
+    client = _make_query_client(handler)
+    events = list(client.iter_query_events("q"))
+
+    assert [name for name, _ in events] == ["status", "status", "sql", "result"]
+    assert events[0][1] == {"message": "Starting...", "request_id": "r1"}
+    assert events[2][1] == {"sql": "SELECT 1"}
+    assert events[3][1]["thread_id"] == "th_1"
+
+
+def test_iter_query_events_raises_stream_unsupported_on_404():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "Not Found"})
+
+    client = _make_query_client(handler)
+
+    with pytest.raises(QueryStreamUnsupported):
+        list(client.iter_query_events("q"))
+
+
+def test_iter_query_events_raises_http_error_on_other_statuses():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"detail": "boom"})
+
+    client = _make_query_client(handler)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        list(client.iter_query_events("q"))

@@ -113,6 +113,20 @@ class FakeClient:
         )
         return {"tree_id": tree_id}
 
+    def query(self, question, *, thread_id=None, progress_callback=None):
+        self.calls.append(("query", (question,), {"thread_id": thread_id}))
+        return {
+            "success": True,
+            "thread_id": "th_1",
+            "message_id": "msg_1",
+            "question": question,
+            "explanation": "Answer.",
+            "sql": "SELECT 1",
+            "data": [{"a": 1}],
+            "columns": ["a"],
+            "row_count": 1,
+        }
+
 
 def test_tool_definitions_cover_acceptance_criteria_tools():
     names = {tool["name"] for tool in _tool_definitions()}
@@ -124,6 +138,7 @@ def test_tool_definitions_cover_acceptance_criteria_tools():
         "qluent_deep_dive",
         "qluent_rca_analyze",
         "qluent_elasticity",
+        "qluent_query",
         "qluent_suggestions",
     }
     assert names == set(HANDLERS)
@@ -331,6 +346,28 @@ def test_dispatch_elasticity_attaches_provenance():
     assert result["provenance"]["project_uuid"] == "project-123"
     assert result["outcome"] == "net_revenue"
     assert result["lever"] == "orders"
+
+
+def test_dispatch_query_returns_contract_and_forwards_thread_id():
+    client = FakeClient()
+
+    result = asyncio.run(
+        dispatch_tool(
+            "qluent_query",
+            {"question": "top customers?", "thread_id": "th_0"},
+            client=client,
+            config=CONFIG,
+        )
+    )
+
+    assert client.calls == [("query", ("top customers?",), {"thread_id": "th_0"})]
+    assert result["schema_version"] == "qluent.query.v1"
+    assert result["contract_kind"] == "nl_query"
+    assert result["deterministic"] is False
+    assert result["status"] == "ok"
+    assert result["answer"] == "Answer."
+    assert result["sql"] == "SELECT 1"
+    assert result["thread_id"] == "th_1"
 
 
 def test_dispatch_suggestions_filters_by_tree_id():

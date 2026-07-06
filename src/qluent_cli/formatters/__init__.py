@@ -10,6 +10,7 @@ from qluent_cli.formatters.comparison import format_comparison
 from qluent_cli.formatters.elasticity import format_elasticity
 from qluent_cli.formatters.evaluation import format_evaluation, format_levers
 from qluent_cli.formatters.investigation import format_investigation
+from qluent_cli.formatters.query import format_query_clarification, format_query_result
 from qluent_cli.formatters.rca import format_root_cause
 from qluent_cli.formatters.trees import format_tree_detail, format_tree_list
 from qluent_cli.formatters.trend import format_trend
@@ -22,6 +23,8 @@ __all__ = [
     "format_investigation",
     "format_levers",
     "format_period_label",
+    "format_query_clarification",
+    "format_query_result",
     "format_root_cause",
     "format_tree_detail",
     "format_tree_list",

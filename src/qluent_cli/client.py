@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import random
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -27,6 +28,7 @@ from qluent_cli.rca_contracts import RCAOutput, enrich_rca_output
 
 
 _INVESTIGATE_TIMEOUT = 300.0
+_QUERY_TIMEOUT = 300.0
 _PROGRESS_INTERVAL_SECONDS = 30.0
 
 # Heartbeat callback used by `investigate_tree` to surface that a long-running
@@ -146,6 +148,10 @@ class _RetryTransport(httpx.BaseTransport):
 
 def _default_jitter(base: float) -> float:
     return base * random.uniform(0.7, 1.3)
+
+
+class QueryStreamUnsupported(Exception):
+    """The backend does not expose the streaming query endpoint."""
 
 
 def _build_transport() -> httpx.BaseTransport:
@@ -398,26 +404,117 @@ class QluentClient:
             "compare_trees": list(merged.compare_trees),
         })
         url = f"{self._base}/metric-trees/{tree_id}/investigate/"
-
-        if progress_callback is None:
-            resp = self._client.post(url, json=body, timeout=_INVESTIGATE_TIMEOUT)
-        else:
-            started = time.monotonic()
-            done = threading.Event()
-
-            def tick() -> None:
-                while not done.wait(_PROGRESS_INTERVAL_SECONDS):
-                    progress_callback("awaiting_api", time.monotonic() - started)
-
-            heartbeat = threading.Thread(target=tick, daemon=True)
-            heartbeat.start()
-            try:
-                resp = self._client.post(url, json=body, timeout=_INVESTIGATE_TIMEOUT)
-            finally:
-                done.set()
-
+        resp = self._post_with_heartbeat(
+            url, body, timeout=_INVESTIGATE_TIMEOUT, progress_callback=progress_callback
+        )
         resp.raise_for_status()
         return resp.json()
+
+    def _post_with_heartbeat(
+        self,
+        url: str,
+        body: dict[str, Any],
+        *,
+        timeout: float,
+        progress_callback: ProgressCallback | None,
+    ) -> httpx.Response:
+        """POST with an optional daemon-thread heartbeat.
+
+        When `progress_callback` is supplied, it receives an
+        `("awaiting_api", elapsed_seconds)` heartbeat every
+        `_PROGRESS_INTERVAL_SECONDS` until the POST returns. The thread is
+        torn down before the response is returned, regardless of outcome.
+        """
+        if progress_callback is None:
+            return self._client.post(url, json=body, timeout=timeout)
+
+        started = time.monotonic()
+        done = threading.Event()
+
+        def tick() -> None:
+            while not done.wait(_PROGRESS_INTERVAL_SECONDS):
+                progress_callback("awaiting_api", time.monotonic() - started)
+
+        heartbeat = threading.Thread(target=tick, daemon=True)
+        heartbeat.start()
+        try:
+            return self._client.post(url, json=body, timeout=timeout)
+        finally:
+            done.set()
+
+    def _query_body(self, question: str, thread_id: str | None) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "question": question,
+            "user_email": self._config.user_email,
+        }
+        if thread_id:
+            body["thread_id"] = thread_id
+        return body
+
+    def query(
+        self,
+        question: str,
+        *,
+        thread_id: str | None = None,
+        progress_callback: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Run an ad-hoc natural-language query via the sync endpoint.
+
+        A 422 response is a valid outcome (clarification needed / cannot
+        answer) and is returned as a payload, not raised.
+        """
+        resp = self._post_with_heartbeat(
+            f"{self._base}/query/",
+            self._query_body(question, thread_id),
+            timeout=_QUERY_TIMEOUT,
+            progress_callback=progress_callback,
+        )
+        if resp.status_code == 422:
+            return resp.json()
+        resp.raise_for_status()
+        return resp.json()
+
+    def iter_query_events(
+        self,
+        question: str,
+        *,
+        thread_id: str | None = None,
+    ) -> Iterator[tuple[str, dict[str, Any]]]:
+        """Stream an ad-hoc query over SSE, yielding `(event_name, payload)`.
+
+        Yields `status` events while the workflow runs, optionally a `sql`
+        event, then exactly one terminal `result` / `clarification` / `error`
+        event. Raises `QueryStreamUnsupported` when the backend predates the
+        streaming endpoint (404/405 before any event) so callers can fall
+        back to the sync path — no server-side work has started at that
+        point. The per-read timeout resets on every received event.
+        """
+        with self._client.stream(
+            "POST",
+            f"{self._base}/query/stream",
+            json=self._query_body(question, thread_id),
+            headers={"Accept": "text/event-stream"},
+            timeout=httpx.Timeout(_QUERY_TIMEOUT, connect=10.0),
+        ) as resp:
+            if resp.status_code in (404, 405):
+                raise QueryStreamUnsupported()
+            if resp.status_code >= 400:
+                resp.read()
+                resp.raise_for_status()
+
+            event_name: str | None = None
+            data_lines: list[str] = []
+            for line in resp.iter_lines():
+                if line == "":
+                    if event_name and data_lines:
+                        yield event_name, json.loads("\n".join(data_lines))
+                    event_name = None
+                    data_lines = []
+                elif line.startswith("event:"):
+                    event_name = line[len("event:"):].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line[len("data:"):].lstrip())
+                # SSE comments (":") and unknown fields are ignored.
 
     def root_cause_tree(
         self,

@@ -22,7 +22,8 @@ from qluent_cli import config as _config_module
 
 INVESTIGATE_COMMAND = "trees investigate"
 DEEP_DIVE_COMMAND = "trees deep-dive"
-KNOWN_COMMANDS = (INVESTIGATE_COMMAND, DEEP_DIVE_COMMAND)
+QUERY_COMMAND = "query"
+KNOWN_COMMANDS = (INVESTIGATE_COMMAND, DEEP_DIVE_COMMAND, QUERY_COMMAND)
 
 
 # Crockford base32 (no I, L, O, U) — gives a time-sortable, unambiguous ID.

@@ -20,6 +20,7 @@ qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
 qluent trees investigate <tree_id> --period "last week"     # Validate + trend + evaluate + RCA bundle
 qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
+qluent query "<question>" [--thread <id>]                   # Ad-hoc NL question -> SQL -> results (LLM, non-deterministic)
 ```
 
 All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`
@@ -91,6 +92,34 @@ Use these rules:
 - Reuse the exact windows from the last investigation for follow-ups unless the user explicitly changes the period.
 - Never parse saved tool-result temp files or write ad-hoc Python to extract values from prior bash output. Use the structured JSON from `investigate`, `evaluate`, or `levers` directly.
 - Do not rerun both JSON and non-JSON versions of the same qluent command unless the JSON is genuinely insufficient.
+
+## When to use `qluent query` vs metric-tree commands
+
+The tree commands (`investigate`, `evaluate`, `trend`, `rca analyze`, ...) are
+deterministic, fast, and reproducible — always prefer them when the question maps
+to a tree's KPIs, child nodes, or declared dimensions ("why did revenue drop",
+trends, drivers, elasticity).
+
+`qluent query` runs the backend's LLM query workflow (natural language -> generated
+SQL -> execution) and is for everything trees cannot answer:
+
+- Row-level or entity-level questions ("top 10 customers by refunds", "list last
+  week's failed orders").
+- Arbitrary aggregations, filters, or joins over metrics and dimensions no tree declares.
+- Explicit raw-data requests (a table, an export, the SQL itself).
+
+It is non-deterministic, slower (can take minutes), and returns the generated `sql`,
+up to 1000 inline rows in `data`, plus a `download_url` for the full result set.
+
+Rules:
+
+- Use `--json-output` and check `status`: `ok`, `clarification_needed`, or `error`.
+- If `status = clarification_needed`, answer by re-running
+  `qluent query "<your answer>" --thread <thread_id>` with the `thread_id` from the response.
+- Reuse `thread_id` for follow-up questions that build on the same result.
+- Verify the returned `sql` matches the user's intent before presenting numbers, and
+  present the numbers as coming from an ad-hoc query, never as deterministic tree evidence.
+- Never use `qluent query` to re-derive numbers a tree command already returned.
 
 ## Manual root cause analysis workflow
 

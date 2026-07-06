@@ -18,6 +18,7 @@ from qluent_cli.client import QluentClient
 from qluent_cli.client_configs import RcaParams
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.elasticity import analyze_elasticity
+from qluent_cli.query_contracts import build_query_contract
 from qluent_cli.runs import run_investigation
 from qluent_cli.suggestions import build_suggestions
 from qluent_cli.utils import parse_filters
@@ -249,6 +250,35 @@ def _tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "qluent_query",
+            "description": (
+                "Ask an ad-hoc natural-language question against the project's data. "
+                "Runs the LLM query workflow (NL -> SQL -> execution) — non-deterministic, "
+                "may take minutes. Use for row-level or arbitrary questions not covered by "
+                "metric trees; prefer the deterministic tree tools when one fits. Pass "
+                "thread_id from a previous result to follow up or answer a clarification "
+                "(status = clarification_needed)."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "The natural-language question to answer.",
+                    },
+                    "thread_id": {
+                        "type": "string",
+                        "description": (
+                            "Thread id from a previous qluent_query result for "
+                            "follow-ups or clarification answers."
+                        ),
+                    },
+                },
+                "required": ["question"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "qluent_suggestions",
             "description": (
                 "Return project-specific example questions and matching CLI commands "
@@ -409,6 +439,11 @@ async def _elasticity(client: QluentClient, config: QluentConfig, args: dict[str
     )
 
 
+async def _query(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+    raw = client.query(args["question"], thread_id=args.get("thread_id"))
+    return build_query_contract(raw, config)
+
+
 async def _suggestions(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     trees_data = client.list_trees()
     items = build_suggestions(trees_data)
@@ -426,6 +461,7 @@ HANDLERS: dict[str, ToolHandler] = {
     "qluent_deep_dive": _deep_dive,
     "qluent_rca_analyze": _rca_analyze,
     "qluent_elasticity": _elasticity,
+    "qluent_query": _query,
     "qluent_suggestions": _suggestions,
 }
 

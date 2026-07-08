@@ -11,7 +11,7 @@ from urllib.parse import urlparse
 
 CONFIG_DIR = Path.home() / ".qluent"
 CONFIG_FILE = CONFIG_DIR / "config.json"
-DEFAULT_API_URL = "https://api.app-development.qluent.com"
+DEFAULT_API_URL = "https://api.app.qluent.com"
 LOCAL_API_URL = "http://localhost:8001"
 
 

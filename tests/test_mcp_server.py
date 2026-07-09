@@ -4,6 +4,7 @@ import asyncio
 import json
 from typing import Any
 
+import pytest
 from click.testing import CliRunner
 
 from qluent_cli.config import QluentConfig
@@ -127,6 +128,31 @@ class FakeClient:
             "row_count": 1,
         }
 
+    def get_query_catalog(self):
+        self.calls.append(("get_query_catalog", (), {}))
+        return {
+            "success": True,
+            "schema_version": 1,
+            "catalog": {"bases": {"orders": {"columns": ["brand"]}}},
+            "plan_schema": {"type": "object"},
+        }
+
+    def execute_plan(self, plan, *, progress_callback=None):
+        self.calls.append(("execute_plan", (plan,), {}))
+        return {
+            "success": True,
+            "schema_version": 1,
+            "sql": "WITH src AS (SELECT 1) SELECT * FROM src",
+            "rows": [{"brand": "acme", "gfv": 12.5}],
+            "row_count": 1,
+            "metadata": {
+                "columns": ["brand", "gfv"],
+                "grain": ["brand"],
+                "metrics": {"gfv": {"kind": "sum", "summable": True}},
+            },
+            "plan_summary": {"bases": ["orders"]},
+        }
+
 
 def test_tool_definitions_cover_acceptance_criteria_tools():
     names = {tool["name"] for tool in _tool_definitions()}
@@ -139,6 +165,8 @@ def test_tool_definitions_cover_acceptance_criteria_tools():
         "qluent_rca_analyze",
         "qluent_elasticity",
         "qluent_query",
+        "qluent_compose_catalog",
+        "qluent_compose_query",
         "qluent_suggestions",
     }
     assert names == set(HANDLERS)
@@ -485,3 +513,39 @@ def test_qluent_mcp_serve_invokes_serve_stdio(monkeypatch):
     result = runner.invoke(cli, ["mcp", "serve"])
     assert result.exit_code == 0, result.output
     assert called == {"ok": True}
+
+
+def test_dispatch_compose_catalog_returns_catalog_contract():
+    client = FakeClient()
+    result = asyncio.run(
+        dispatch_tool("qluent_compose_catalog", {}, client=client, config=CONFIG)
+    )
+    assert client.calls == [("get_query_catalog", (), {})]
+    assert result["contract_kind"] == "query_catalog"
+    assert result["status"] == "ok"
+    assert "orders" in result["catalog"]["bases"]
+    assert result["plan_schema"] == {"type": "object"}
+
+
+def test_dispatch_compose_query_returns_deterministic_plan_contract():
+    client = FakeClient()
+    plan = {"nodes": [{"op": "source", "id": "src", "base": "orders"}], "output": "src"}
+    result = asyncio.run(
+        dispatch_tool("qluent_compose_query", {"plan": plan}, client=client, config=CONFIG)
+    )
+    assert client.calls == [("execute_plan", (plan,), {})]
+    assert result["contract_kind"] == "query_plan"
+    assert result["deterministic"] is True
+    assert result["status"] == "ok"
+    assert result["grain"] == ["brand"]
+    assert result["metrics"]["gfv"]["summable"] is True
+
+
+def test_dispatch_compose_query_rejects_non_object_plan():
+    client = FakeClient()
+    with pytest.raises(ValueError):
+        asyncio.run(
+            dispatch_tool(
+                "qluent_compose_query", {"plan": "[1]"}, client=client, config=CONFIG
+            )
+        )

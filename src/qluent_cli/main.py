@@ -14,6 +14,7 @@ from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
 from qluent_cli.elasticity import elasticity
 from qluent_cli.formatters import format_tree_list
+from qluent_cli.plan import catalog, plan
 from qluent_cli.query import query
 from qluent_cli.rca import rca
 from qluent_cli.suggestions import suggestions
@@ -422,6 +423,8 @@ def setup(
 
 cli.add_command(trees)
 cli.add_command(query)
+cli.add_command(catalog)
+cli.add_command(plan)
 cli.add_command(rca)
 cli.add_command(elasticity)
 cli.add_command(suggestions)

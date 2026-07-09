@@ -18,6 +18,7 @@ from qluent_cli.client import QluentClient
 from qluent_cli.client_configs import RcaParams
 from qluent_cli.config import QluentConfig, load_config
 from qluent_cli.elasticity import analyze_elasticity
+from qluent_cli.plan_contracts import build_catalog_contract, build_plan_contract
 from qluent_cli.query_contracts import build_query_contract
 from qluent_cli.runs import run_investigation
 from qluent_cli.suggestions import build_suggestions
@@ -279,6 +280,50 @@ def _tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "qluent_compose_catalog",
+            "description": (
+                "Fetch the project's closed-world query catalog: bases (with "
+                "columns), metrics (with the bases that can compute them), "
+                "relationships, derived dimensions and aliases — plus the "
+                "QueryPlan JSON schema (plan_schema) accepted by "
+                "qluent_compose_query. Fetch once per session; it is the whole "
+                "vocabulary needed to author plans."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": False,
+            },
+        },
+        {
+            "name": "qluent_compose_query",
+            "description": (
+                "Compile and execute a typed QueryPlan against the project's "
+                "query catalog (see qluent_compose_catalog). Deterministic and "
+                "correct-by-construction: the same plan always produces the "
+                "same SQL, and anything outside the catalog is rejected with "
+                "status 'plan_invalid' and a repairable error message — fix "
+                "the plan and retry. Prefer this over qluent_query when the "
+                "catalog vocabulary covers the question. When combining "
+                "several results, aggregate early (group_by) and only add "
+                "metrics whose metadata marks them summable."
+            ),
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "plan": {
+                        "type": "object",
+                        "description": (
+                            "QueryPlan document; must satisfy the plan_schema "
+                            "from qluent_compose_catalog."
+                        ),
+                    },
+                },
+                "required": ["plan"],
+                "additionalProperties": False,
+            },
+        },
+        {
             "name": "qluent_suggestions",
             "description": (
                 "Return project-specific example questions and matching CLI commands "
@@ -453,6 +498,23 @@ async def _suggestions(client: QluentClient, _config: QluentConfig, args: dict[s
     return {"suggestions": items}
 
 
+async def _compose_catalog(
+    client: QluentClient, config: QluentConfig, _args: dict[str, Any]
+) -> dict[str, Any]:
+    raw = client.get_query_catalog()
+    return build_catalog_contract(raw, config)
+
+
+async def _compose_query(
+    client: QluentClient, config: QluentConfig, args: dict[str, Any]
+) -> dict[str, Any]:
+    plan = args.get("plan")
+    if not isinstance(plan, dict):
+        raise ValueError("'plan' must be a QueryPlan JSON object")
+    raw = client.execute_plan(plan)
+    return build_plan_contract(raw, config)
+
+
 HANDLERS: dict[str, ToolHandler] = {
     "qluent_list_trees": _list_trees,
     "qluent_get_tree": _get_tree,
@@ -462,6 +524,8 @@ HANDLERS: dict[str, ToolHandler] = {
     "qluent_rca_analyze": _rca_analyze,
     "qluent_elasticity": _elasticity,
     "qluent_query": _query,
+    "qluent_compose_catalog": _compose_catalog,
+    "qluent_compose_query": _compose_query,
     "qluent_suggestions": _suggestions,
 }
 

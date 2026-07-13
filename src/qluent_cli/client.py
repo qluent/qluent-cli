@@ -474,6 +474,44 @@ class QluentClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_query_catalog(self) -> dict[str, Any]:
+        """Fetch the project's closed-world query catalog + QueryPlan schema.
+
+        A 422 (project has no loadable query_catalog) is returned as a payload
+        so the caller can surface the backend's explanation.
+        """
+        resp = self._client.get(
+            f"{self._base}/query-catalog/",
+            params={"user_email": self._config.user_email},
+        )
+        if resp.status_code == 422:
+            return resp.json()
+        resp.raise_for_status()
+        return resp.json()
+
+    def execute_plan(
+        self,
+        plan: dict[str, Any],
+        *,
+        progress_callback: ProgressCallback | None = None,
+    ) -> dict[str, Any]:
+        """Compile and execute a typed QueryPlan via the compose endpoint.
+
+        A 422 response is a valid outcome (repairable compiler / scope error;
+        the caller owns the fix-and-retry loop) and is returned as a payload,
+        not raised.
+        """
+        resp = self._post_with_heartbeat(
+            f"{self._base}/query-plan/",
+            {"user_email": self._config.user_email, "plan": plan},
+            timeout=_QUERY_TIMEOUT,
+            progress_callback=progress_callback,
+        )
+        if resp.status_code == 422:
+            return resp.json()
+        resp.raise_for_status()
+        return resp.json()
+
     def iter_query_events(
         self,
         question: str,

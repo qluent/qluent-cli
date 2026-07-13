@@ -21,6 +21,8 @@ qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tr
 qluent trees investigate <tree_id> --period "last week"     # Validate + trend + evaluate + RCA bundle
 qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
 qluent query "<question>" [--thread <id>]                   # Ad-hoc NL question -> SQL -> results (LLM, non-deterministic)
+qluent catalog [--json-output]                              # Show the query catalog: the vocabulary + plan schema for `qluent plan`
+qluent plan '<QueryPlan JSON>' [--file <path>]              # Compile + run a typed QueryPlan (deterministic, catalog-checked)
 ```
 
 All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`
@@ -93,15 +95,33 @@ Use these rules:
 - Never parse saved tool-result temp files or write ad-hoc Python to extract values from prior bash output. Use the structured JSON from `investigate`, `evaluate`, or `levers` directly.
 - Do not rerun both JSON and non-JSON versions of the same qluent command unless the JSON is genuinely insufficient.
 
-## When to use `qluent query` vs metric-tree commands
+## When to use `qluent plan` / `qluent query` vs metric-tree commands
 
 The tree commands (`investigate`, `evaluate`, `trend`, `rca analyze`, ...) are
 deterministic, fast, and reproducible — always prefer them when the question maps
 to a tree's KPIs, child nodes, or declared dimensions ("why did revenue drop",
 trends, drivers, elasticity).
 
+`qluent plan` compiles a typed QueryPlan you author against the project's
+closed-world query catalog — deterministic (the same plan always produces the
+same SQL) and correct-by-construction (anything outside the catalog is rejected
+with a repairable message). Prefer it over `qluent query` for ad-hoc
+aggregations, breakdowns, filters and rankings whenever the catalog's
+bases/metrics/dimensions cover the question:
+
+- Run `qluent catalog --json-output` once per session; it returns the full
+  vocabulary and the QueryPlan JSON schema (`plan_schema`).
+- Author the plan (source -> filter_by -> group_by -> top_k / window) and
+  submit it with `qluent plan --file <path> --json-output`.
+- `status = plan_invalid` is a repair instruction, not a failure: fix the plan
+  from the error message and re-run. Only fall back to `qluent query` when the
+  catalog genuinely lacks the vocabulary (a column/metric that does not exist).
+- Before combining numbers across several plan results, check `grain` and
+  `metrics[*].summable`: only summable metrics (plain sums, row counts) may be
+  added across result sets — recompute averages, ratios and distinct counts.
+
 `qluent query` runs the backend's LLM query workflow (natural language -> generated
-SQL -> execution) and is for everything trees cannot answer:
+SQL -> execution) and is for everything neither trees nor the catalog can answer:
 
 - Row-level or entity-level questions ("top 10 customers by refunds", "list last
   week's failed orders").

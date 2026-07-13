@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 import click
+import httpx
 
 from qluent_cli.client import QluentClient
 from qluent_cli.config import load_config
@@ -46,10 +47,64 @@ def _root_node(tree: dict[str, Any]) -> dict[str, Any] | None:
     return (tree.get("nodes") or [None])[0]
 
 
-def build_suggestions(trees_data: dict[str, Any]) -> list[dict[str, Any]]:
-    """Build deterministic project-specific example questions from tree metadata."""
-    trees = trees_data.get("trees") or []
+def _catalog_dimensions(catalog: dict[str, Any]) -> list[str]:
+    derived = [str(item) for item in catalog.get("derived_dimensions") or [] if item]
+    columns: list[str] = []
+    for base in (catalog.get("bases") or {}).values():
+        raw_columns = base.get("columns") if isinstance(base, dict) else []
+        if isinstance(raw_columns, dict):
+            raw_columns = raw_columns.keys()
+        for column in raw_columns or []:
+            name = str(column)
+            if name and name not in columns:
+                columns.append(name)
+    return derived + [name for name in columns if name not in derived]
+
+
+def build_query_suggestions(catalog_data: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Build query-first examples from the project's closed-world catalog."""
+    if not catalog_data or catalog_data.get("success") is False:
+        return []
+    catalog = catalog_data.get("catalog") or {}
+    metrics = [str(name) for name in (catalog.get("metrics") or {}) if name]
+    bases = [str(name) for name in (catalog.get("bases") or {}) if name]
+    dimensions = _catalog_dimensions(catalog)
+    subjects = metrics or bases
     suggestions: list[dict[str, Any]] = []
+
+    for subject in subjects[:3]:
+        dimension = next(
+            (name for name in dimensions if name != subject),
+            None,
+        )
+        if dimension:
+            question = f"Show {subject} by {dimension} for the last complete month."
+        else:
+            question = f"What was {subject} for the last complete month?"
+        suggestions.append(
+            {
+                "tree_id": None,
+                "tree_label": "Catalog queries",
+                "analysis_type": "query",
+                "example_question": question,
+                "recommended_command": f'qluent query "{question}" --json-output',
+                "preferred_engine": "composed_plan",
+                "rationale": (
+                    "Starts from catalog vocabulary; agents should use a deterministic "
+                    "composed plan when coverage is complete and fall back to the NL query."
+                ),
+            }
+        )
+    return suggestions
+
+
+def build_suggestions(
+    trees_data: dict[str, Any],
+    catalog_data: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Build query-first examples, followed by advanced metric-tree analyses."""
+    trees = trees_data.get("trees") or []
+    suggestions = build_query_suggestions(catalog_data)
 
     for index, tree in enumerate(trees):
         tree_id = str(tree.get("id") or "")
@@ -177,11 +232,16 @@ def format_suggestions(suggestions: list[dict[str, Any]]) -> str:
 @click.command()
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
 def suggestions(as_json: bool) -> None:
-    """Show project-specific example questions for available metric trees."""
+    """Show query-first examples and advanced tree analyses for the project."""
     config = load_config()
     client = QluentClient(config)
+    try:
+        catalog_data = client.get_query_catalog()
+    except httpx.HTTPStatusError:
+        catalog_data = None
     data = {
-        "suggestions": build_suggestions(client.list_trees()),
+        "default_workflow": "query",
+        "suggestions": build_suggestions(client.list_trees(), catalog_data),
     }
 
     if as_json:

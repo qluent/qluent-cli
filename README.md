@@ -1,6 +1,8 @@
 # Qluent CLI
 
-`qluent` is a client-facing CLI for deterministic metric-tree analysis and root-cause analysis.
+`qluent` is a client-facing CLI for business querying and deterministic
+metric-tree analysis. Querying is the default workflow; metric trees add
+advanced governed RCA, trend, and lever analysis.
 This README is written for the standalone `qluent-cli` repository layout.
 
 ## Client Install
@@ -65,6 +67,10 @@ clients that follow the convention) prefer it over `AGENTS.md` for that run.
 ## First Commands
 
 ```bash
+qluent status
+qluent suggestions --json-output
+qluent catalog --json-output
+qluent query "Show revenue by region last month" --json-output
 qluent trees list
 qluent trees trend revenue --periods 4 --grain week
 qluent trees investigate revenue --period "last week" --json-output
@@ -72,9 +78,11 @@ qluent rca analyze revenue --period "last week"
 qluent elasticity revenue --outcome net_revenue --lever voucher_cost --dimension region --period "last week" --json-output
 ```
 
-For Claude Code, the recommended flow is `qluent trees list --json-output` to
-discover available trees, then `qluent trees investigate <tree_id> --period
-"<period>" --json-output` for the chosen tree. The bundled response includes
+For Claude Code, start with `qluent suggestions --json-output` and the query
+workflow. Catalog-covered questions use deterministic composed plans; the
+NL-to-SQL query is the fallback. When the user explicitly requests governed
+KPI movement analysis and a matching tree is configured, run `qluent trees
+investigate <tree_id> --period "<period>" --json-output`. The bundle includes
 `agent.status`, `agent.top_findings`, `agent.gaps`, and
 `agent.recommended_next_steps` so the model can continue RCA without manually
 inventing the next command.

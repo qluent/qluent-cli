@@ -42,7 +42,7 @@ def test_setup_saves_config_and_writes_agents_md(monkeypatch, isolated_config, t
     }
     agents_md = tmp_path / "AGENTS.md"
     assert agents_md.exists()
-    assert "# Qluent Metric Trees" in agents_md.read_text()
+    assert "# Qluent" in agents_md.read_text()
     assert not (tmp_path / "CLAUDE.md").exists()
 
 
@@ -96,7 +96,7 @@ def test_claude_init_writes_file(monkeypatch, tmp_path):
 
     assert result.exit_code == 0
     assert (tmp_path / "CLAUDE.md").exists()
-    assert "# Qluent Metric Trees" in (tmp_path / "CLAUDE.md").read_text()
+    assert "# Qluent" in (tmp_path / "CLAUDE.md").read_text()
 
 
 def test_claude_init_requires_force_to_overwrite(monkeypatch, tmp_path):
@@ -117,7 +117,7 @@ def test_agents_init_default_writes_agents_md(monkeypatch, tmp_path):
     assert result.exit_code == 0
     agents_md = tmp_path / "AGENTS.md"
     assert agents_md.exists()
-    assert "# Qluent Metric Trees" in agents_md.read_text()
+    assert "# Qluent" in agents_md.read_text()
     assert not (tmp_path / "CLAUDE.md").exists()
 
 
@@ -129,7 +129,7 @@ def test_agents_init_as_claude_writes_claude_md(monkeypatch, tmp_path):
     assert result.exit_code == 0
     claude_md = tmp_path / "CLAUDE.md"
     assert claude_md.exists()
-    assert "# Qluent Metric Trees" in claude_md.read_text()
+    assert "# Qluent" in claude_md.read_text()
     assert not (tmp_path / "AGENTS.md").exists()
 
 
@@ -161,7 +161,7 @@ def test_agents_init_requires_force_to_overwrite(monkeypatch, tmp_path):
 
     forced = CliRunner().invoke(cli, ["agents", "init", "--force"])
     assert forced.exit_code == 0
-    assert "# Qluent Metric Trees" in (tmp_path / "AGENTS.md").read_text()
+    assert "# Qluent" in (tmp_path / "AGENTS.md").read_text()
 
 
 def test_agents_init_as_both_rejects_custom_path(monkeypatch, tmp_path):
@@ -200,7 +200,7 @@ def test_setup_accepts_deprecated_claude_path_alias(
     assert result.exit_code == 0
     custom_path = tmp_path / "CUSTOM_CLAUDE.md"
     assert custom_path.exists()
-    assert "# Qluent Metric Trees" in custom_path.read_text()
+    assert "# Qluent" in custom_path.read_text()
     assert not (tmp_path / "AGENTS.md").exists()
 
 
@@ -240,7 +240,9 @@ def test_status_outputs_connected_project_and_trees(monkeypatch):
     assert "User: user@example.com" in result.output
     assert "revenue" in result.output
     assert "Net Revenue, Orders" in result.output
-    assert 'qluent trees investigate revenue --period "last month" --json-output' in result.output
+    assert "Query             ready (default)" in result.output
+    assert "Metric trees      1 available (advanced)" in result.output
+    assert "qluent suggestions --json-output" in result.output
 
 
 def test_whoami_json_outputs_agent_friendly_status(monkeypatch):
@@ -268,6 +270,20 @@ def test_whoami_json_outputs_agent_friendly_status(monkeypatch):
         "client_safe": True,
     }
     assert payload["trees"] == []
+    assert payload["capabilities"] == {
+        "query": {
+            "available": True,
+            "status": "ready",
+            "default": True,
+        },
+        "metric_trees": {
+            "available": False,
+            "status": "not_configured",
+            "count": 0,
+            "advanced": True,
+        },
+    }
+    assert payload["suggested_first_command"] == "qluent suggestions --json-output"
 
 
 def test_status_explains_login_when_not_configured(monkeypatch):

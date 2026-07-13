@@ -1,13 +1,17 @@
-# Qluent Metric Trees
+# Qluent
 
-You have access to the `qluent` CLI for deterministic KPI analysis. Use it to answer
-questions about business performance, revenue drivers, cost breakdowns, and trend changes.
+You have access to the `qluent` CLI for business querying and deterministic
+KPI analysis. Querying is the default workflow; metric trees are the advanced
+workflow for governed movement analysis, RCA, trends, and levers.
 
 ## Commands
 
 ```bash
-qluent trees list                                           # List available metric trees (start here for any natural-language question)
-qluent suggestions --json-output                           # Project-specific example questions and commands
+qluent suggestions --json-output                           # Start here: query-first project examples plus advanced tree analyses
+qluent catalog --json-output                               # Catalog vocabulary + plan schema for deterministic queries
+qluent plan '<QueryPlan JSON>' [--file <path>]              # Deterministic, catalog-checked query
+qluent query "<question>" [--thread <id>]                   # NL-to-SQL fallback when the catalog cannot cover the question
+qluent trees list                                           # List advanced metric trees
 qluent trees get <tree_id>                                  # Show tree hierarchy
 qluent trees validate <tree_id>                             # Validate tree SQL contracts and dimensions
 qluent trees evaluate <tree_id> --period "last week"        # Evaluate with natural language period
@@ -20,9 +24,6 @@ qluent trees trend <tree_id> --periods 3 --grain month      # Monthly trend
 qluent trees compare <tree_id> <tree_id> --period "last week"  # Side-by-side tree comparison
 qluent trees investigate <tree_id> --period "last week"     # Validate + trend + evaluate + RCA bundle
 qluent rca analyze revenue --period "last week"             # Deterministic tree + segment RCA
-qluent query "<question>" [--thread <id>]                   # Ad-hoc NL question -> SQL -> results (LLM, non-deterministic)
-qluent catalog [--json-output]                              # Show the query catalog: the vocabulary + plan schema for `qluent plan`
-qluent plan '<QueryPlan JSON>' [--file <path>]              # Compile + run a typed QueryPlan (deterministic, catalog-checked)
 ```
 
 All commands support `--json-output` for raw JSON. The `trend` command supports `--as-of YYYY-MM-DD`
@@ -34,9 +35,13 @@ Supported periods: "last week", "this week", "last month", "this month", "last q
 
 ## Preferred agent workflow
 
-**Pick a tree, then `investigate`.** The qluent server is deterministic and does
-not match natural-language questions to trees — the agent must select the tree
-client-side and pass it as an explicit positional argument.
+**Start with query discovery.** Run `qluent suggestions --json-output` and
+prefer its catalog-backed query examples. Author a composed plan when the
+catalog covers the question; use `qluent query` as the NL-to-SQL fallback.
+
+Metric trees are advanced and optional. Use them when the user explicitly asks
+for deterministic KPI movement, RCA, trend classification, mix-shift, or
+lever analysis and a matching tree is configured.
 
 If the user already named the tree (e.g. "investigate revenue last week"), run:
 
@@ -44,15 +49,18 @@ If the user already named the tree (e.g. "investigate revenue last week"), run:
 qluent trees investigate <tree_id> --period "<period>" --json-output
 ```
 
-If the user asked what they can do with the connected project, run:
+If the user asks what they can do with the connected project, run:
 
 ```bash
 qluent suggestions --json-output
 ```
 
-If the user asked a natural-language question without naming a tree, list the
-available trees first and pick the best fit by matching the question against
-each tree's `id`, `label`, `description`, child node labels, and declared
+For a general natural-language question, use the query workflow described
+below. Do not require or probe metric trees first.
+
+For an explicit advanced investigation without a named tree, list the
+available trees and pick the best fit by matching the question against each
+tree's `id`, `label`, `description`, child node labels, and declared
 `dimensions`:
 
 ```bash
@@ -97,10 +105,12 @@ Use these rules:
 
 ## When to use `qluent plan` / `qluent query` vs metric-tree commands
 
-The tree commands (`investigate`, `evaluate`, `trend`, `rca analyze`, ...) are
-deterministic, fast, and reproducible — always prefer them when the question maps
-to a tree's KPIs, child nodes, or declared dimensions ("why did revenue drop",
-trends, drivers, elasticity).
+The query workflow is the default for values, aggregations, breakdowns,
+rankings, comparisons, and general business questions. The tree commands
+(`investigate`, `evaluate`, `trend`, `rca analyze`, ...) are deterministic,
+fast, and reproducible, but advanced: use them for explicit governed movement
+analysis, RCA, trend, mix, or elasticity requests that map to a configured
+tree.
 
 `qluent plan` compiles a typed QueryPlan you author against the project's
 closed-world query catalog — deterministic (the same plan always produces the

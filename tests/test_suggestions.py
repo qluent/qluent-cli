@@ -34,6 +34,16 @@ TREE_DATA = {
     ]
 }
 
+CATALOG_DATA = {
+    "success": True,
+    "catalog": {
+        "bases": {"orders": {"columns": ["brand", "country"]}},
+        "metrics": {"gfv": ["orders"]},
+        "relationships": {},
+        "derived_dimensions": ["order_month"],
+    },
+}
+
 
 def test_build_suggestions_derives_examples_from_tree_metadata():
     suggestions = build_suggestions(TREE_DATA)
@@ -55,6 +65,24 @@ def test_build_suggestions_derives_examples_from_tree_metadata():
     )
 
 
+def test_build_suggestions_puts_catalog_queries_first():
+    suggestions = build_suggestions(TREE_DATA, CATALOG_DATA)
+
+    assert suggestions[0]["analysis_type"] == "query"
+    assert suggestions[0]["tree_label"] == "Catalog queries"
+    assert suggestions[0]["preferred_engine"] == "composed_plan"
+    assert "gfv" in suggestions[0]["example_question"]
+    assert any(item["analysis_type"] == "rca" for item in suggestions)
+
+
+def test_build_suggestions_supports_catalog_only_projects():
+    suggestions = build_suggestions({"trees": []}, CATALOG_DATA)
+
+    assert suggestions
+    assert {item["analysis_type"] for item in suggestions} == {"query"}
+    assert all(item["tree_id"] is None for item in suggestions)
+
+
 def test_suggestions_json_output_contains_agent_fields(monkeypatch):
     monkeypatch.setattr(
         "qluent_cli.suggestions.load_config",
@@ -66,6 +94,10 @@ def test_suggestions_json_output_contains_agent_fields(monkeypatch):
         ),
     )
     monkeypatch.setattr("qluent_cli.suggestions.QluentClient.list_trees", lambda self: TREE_DATA)
+    monkeypatch.setattr(
+        "qluent_cli.suggestions.QluentClient.get_query_catalog",
+        lambda self: CATALOG_DATA,
+    )
 
     result = CliRunner().invoke(cli, ["suggestions", "--json-output"])
 
@@ -79,7 +111,9 @@ def test_suggestions_json_output_contains_agent_fields(monkeypatch):
         "recommended_command",
         "rationale",
     } <= set(first)
-    assert first["tree_id"] == "revenue"
+    assert payload["default_workflow"] == "query"
+    assert first["tree_id"] is None
+    assert first["analysis_type"] == "query"
 
 
 def test_suggestions_human_output_groups_by_tree(monkeypatch):
@@ -93,9 +127,14 @@ def test_suggestions_human_output_groups_by_tree(monkeypatch):
         ),
     )
     monkeypatch.setattr("qluent_cli.suggestions.QluentClient.list_trees", lambda self: TREE_DATA)
+    monkeypatch.setattr(
+        "qluent_cli.suggestions.QluentClient.get_query_catalog",
+        lambda self: CATALOG_DATA,
+    )
 
     result = CliRunner().invoke(cli, ["suggestions"])
 
     assert result.exit_code == 0
+    assert "Catalog queries\n- Show gfv" in result.output
     assert "Revenue\n- Why did Net Revenue change last complete month?" in result.output
     assert "Growth\n- Why did Active Users change last complete month?" in result.output

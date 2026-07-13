@@ -17,6 +17,7 @@ from qluent_cli.formatters import format_tree_list
 from qluent_cli.plan import catalog, plan
 from qluent_cli.query import query
 from qluent_cli.rca import rca
+from qluent_cli.sessions import KNOWN_COMMANDS
 from qluent_cli.suggestions import suggestions
 from qluent_cli.trees import trees
 from qluent_cli.output import echo_status
@@ -91,7 +92,7 @@ def _build_status_payload() -> dict[str, Any]:
             }
         )
 
-    first_tree = normalized_trees[0]["id"] if normalized_trees else "<tree_id>"
+    tree_count = len(normalized_trees)
     return {
         "connected": True,
         "project": {
@@ -101,9 +102,20 @@ def _build_status_payload() -> dict[str, Any]:
             "client_safe": config.client_safe,
         },
         "trees": normalized_trees,
-        "suggested_first_command": (
-            f'qluent trees investigate {first_tree} --period "last month" --json-output'
-        ),
+        "capabilities": {
+            "query": {
+                "available": True,
+                "status": "ready",
+                "default": True,
+            },
+            "metric_trees": {
+                "available": tree_count > 0,
+                "status": "ready" if tree_count else "not_configured",
+                "count": tree_count,
+                "advanced": True,
+            },
+        },
+        "suggested_first_command": "qluent suggestions --json-output",
     }
 
 
@@ -125,8 +137,15 @@ def _format_status(payload: dict[str, Any]) -> str:
         f"  User: {project['user_email']}",
         f"  Client safe: {project['client_safe']}",
         "",
-        "Available trees",
+        "Capabilities",
+        "  Query             ready (default)",
     ]
+    tree_count = len(payload.get("trees") or [])
+    if tree_count:
+        lines.append(f"  Metric trees      {tree_count} available (advanced)")
+    else:
+        lines.append("  Metric trees      not configured (advanced, optional)")
+    lines.extend(["", "Available metric trees"])
     trees_payload = {"trees": payload.get("trees", [])}
     if payload.get("trees"):
         for tree in trees_payload["trees"]:
@@ -154,7 +173,7 @@ def _print_status(as_json: bool) -> None:
 @cli.command()
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")
 def status(as_json: bool) -> None:
-    """Show the connected project, API environment, user, and available trees."""
+    """Show the connected project, API environment, and available capabilities."""
     _print_status(as_json)
 
 
@@ -583,7 +602,7 @@ def _format_runs_table(records: list[Any]) -> str:
     "--command",
     "command_filter",
     default=None,
-    type=click.Choice(["trees investigate", "trees deep-dive", "query"]),
+    type=click.Choice(KNOWN_COMMANDS),
     help="Filter by command kind.",
 )
 @click.option(
@@ -644,7 +663,7 @@ def runs_list(
     "--command",
     "command_filter",
     default=None,
-    type=click.Choice(["trees investigate", "trees deep-dive", "query"]),
+    type=click.Choice(KNOWN_COMMANDS),
     help="When used with --last, filter by command kind.",
 )
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")

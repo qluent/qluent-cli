@@ -17,6 +17,7 @@ from qluent_cli.formatters import format_tree_list
 from qluent_cli.plan import catalog, plan
 from qluent_cli.query import query
 from qluent_cli.rca import rca
+from qluent_cli.sessions import KNOWN_COMMANDS
 from qluent_cli.suggestions import suggestions
 from qluent_cli.trees import trees
 from qluent_cli.output import echo_status
@@ -583,7 +584,7 @@ def _format_runs_table(records: list[Any]) -> str:
     "--command",
     "command_filter",
     default=None,
-    type=click.Choice(["trees investigate", "trees deep-dive", "query"]),
+    type=click.Choice(KNOWN_COMMANDS),
     help="Filter by command kind.",
 )
 @click.option(
@@ -644,7 +645,7 @@ def runs_list(
     "--command",
     "command_filter",
     default=None,
-    type=click.Choice(["trees investigate", "trees deep-dive", "query"]),
+    type=click.Choice(KNOWN_COMMANDS),
     help="When used with --last, filter by command kind.",
 )
 @click.option("--json-output", "as_json", is_flag=True, help="Output raw JSON")

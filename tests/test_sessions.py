@@ -228,6 +228,19 @@ def test_runs_list_filters_by_tree(isolated_config):
     assert payload[0]["tree_id"] == "revenue"
 
 
+def test_runs_list_accepts_plan_command_filter(isolated_config):
+    _record(command=sessions.PLAN_COMMAND, tree_id=None)
+
+    result = CliRunner().invoke(
+        cli, ["runs", "list", "--command", "plan", "--json-output"]
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert len(payload) == 1
+    assert payload[0]["command"] == sessions.PLAN_COMMAND
+
+
 def test_runs_show_by_id(isolated_config):
     record = _record(payload={"tree_id": "revenue", "delta": 5})
     result = CliRunner().invoke(cli, ["runs", "show", record.run_id, "--json-output"])
@@ -249,6 +262,24 @@ def test_runs_show_last(isolated_config):
     body = json.loads(result.output)
     assert body["run_id"] == newer.run_id
     assert body["result"]["tag"] == "newer"
+
+
+def test_runs_show_last_accepts_plan_command_filter(isolated_config):
+    plan_record = _record(
+        command=sessions.PLAN_COMMAND,
+        tree_id=None,
+        payload={"tag": "plan"},
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        ["runs", "show", "--last", "--command", "plan", "--json-output"],
+    )
+
+    assert result.exit_code == 0, result.output
+    body = json.loads(result.output)
+    assert body["run_id"] == plan_record.run_id
+    assert body["command"] == sessions.PLAN_COMMAND
 
 
 def test_runs_show_requires_run_id_or_last(isolated_config):

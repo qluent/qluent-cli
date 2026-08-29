@@ -303,8 +303,10 @@ def _tool_definitions() -> list[dict[str, Any]]:
                 "correct-by-construction: the same plan always produces the "
                 "same SQL, and anything outside the catalog is rejected with "
                 "status 'plan_invalid' and a repairable error message — fix "
-                "the plan and retry. Prefer this over qluent_query when the "
-                "catalog vocabulary covers the question. When combining "
+                "the plan and retry. A status of 'error' is not repairable "
+                "(QUERY_CATALOG_INVALID means the project's catalog does not "
+                "load, so no plan will compile). Prefer this over qluent_query "
+                "when the catalog vocabulary covers the question. When combining "
                 "several results, aggregate early (group_by) and only add "
                 "metrics whose metadata marks them summable."
             ),

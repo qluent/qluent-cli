@@ -57,12 +57,27 @@ def test_plan_contract_marks_deterministic_provenance():
 
 
 def test_plan_contract_repairable_codes_map_to_plan_invalid():
-    for code in ("PLAN_INVALID", "PLAN_SCOPE_VIOLATION", "QUERY_CATALOG_INVALID"):
+    for code in ("PLAN_INVALID", "PLAN_SCOPE_VIOLATION"):
         contract = build_plan_contract(
             {"success": False, "error_code": code, "error": "fix me"}, CONFIG
         )
         assert contract["status"] == STATUS_PLAN_INVALID
         assert contract["error"] == "fix me"
+
+
+def test_plan_contract_catalog_invalid_is_not_repairable():
+    # A catalog that fails to load cannot be repaired by editing the plan, so
+    # it must not be dressed up as a repair instruction.
+    contract = build_plan_contract(
+        {
+            "success": False,
+            "error_code": "QUERY_CATALOG_INVALID",
+            "error": "The project has no loadable query_catalog",
+        },
+        CONFIG,
+    )
+    assert contract["status"] == STATUS_ERROR
+    assert contract["error_code"] == "QUERY_CATALOG_INVALID"
 
 
 def test_plan_contract_other_failures_are_errors():

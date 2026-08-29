@@ -126,6 +126,9 @@ bases/metrics/dimensions cover the question:
 - `status = plan_invalid` is a repair instruction, not a failure: fix the plan
   from the error message and re-run. Only fall back to `qluent query` when the
   catalog genuinely lacks the vocabulary (a column/metric that does not exist).
+- `QUERY_CATALOG_INVALID` is *not* repairable: the project's catalog itself
+  fails to load, so no plan will ever compile. Stop re-authoring plans — report
+  the error (the catalog is fixed under the Model tab) and use `qluent query`.
 - Before combining numbers across several plan results, check `grain` and
   `metrics[*].summable`: only summable metrics (plain sums, row counts) may be
   added across result sets — recompute averages, ratios and distinct counts.

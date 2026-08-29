@@ -216,6 +216,51 @@ def test_plan_hard_error_raises(monkeypatch):
     assert "DATA_SOURCE_ERROR" in result.output
 
 
+def test_plan_catalog_invalid_is_a_hard_error_with_remediation(monkeypatch):
+    FakePlanClient.plan_response = {
+        "success": False,
+        "error_code": "QUERY_CATALOG_INVALID",
+        "error": "The project has no loadable query_catalog",
+    }
+    _wire(monkeypatch)
+
+    result = CliRunner().invoke(cli, ["plan", json.dumps(PLAN)])
+
+    assert result.exit_code != 0
+    assert "QUERY_CATALOG_INVALID" in result.output
+    assert "Model tab" in result.output
+    # Never presented as something a corrected plan could fix.
+    assert "Fix the plan" not in result.output
+
+
+def test_plan_catalog_invalid_json_contract_is_status_error(monkeypatch):
+    FakePlanClient.plan_response = {
+        "success": False,
+        "error_code": "QUERY_CATALOG_INVALID",
+        "error": "The project has no loadable query_catalog",
+    }
+    _wire(monkeypatch)
+
+    result = CliRunner().invoke(cli, ["plan", json.dumps(PLAN), "--json-output"])
+
+    assert result.exit_code != 0
+    assert "plan_invalid" not in result.output
+
+
+def test_catalog_invalid_error_carries_remediation(monkeypatch):
+    FakePlanClient.catalog_response = {
+        "success": False,
+        "error_code": "QUERY_CATALOG_INVALID",
+        "error": "The project has no loadable query_catalog",
+    }
+    _wire(monkeypatch)
+
+    result = CliRunner().invoke(cli, ["catalog"])
+
+    assert result.exit_code != 0
+    assert "Model tab" in result.output
+
+
 def test_plan_requires_exactly_one_input(monkeypatch, tmp_path):
     _wire(monkeypatch)
 

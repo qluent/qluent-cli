@@ -35,6 +35,27 @@ def _heartbeat(_stage: str, elapsed: float) -> None:
     echo_status(f"[qluent] awaiting response... ({int(elapsed)}s)")
 
 
+# Hard errors an agent cannot repair by rewriting the plan. The hint names the
+# real remedy so callers stop re-authoring plans that can never compile.
+_REMEDIATION_HINTS = {
+    "QUERY_CATALOG_INVALID": (
+        "The project's query catalog could not be loaded, so no plan will "
+        "compile. Fix the catalog under the Model tab, then re-run."
+    ),
+}
+
+
+def _hard_error(
+    contract: dict, default_code: str, default_message: str
+) -> click.ClickException:
+    code = contract.get("error_code") or default_code
+    message = f"{code}: {contract.get('error') or default_message}"
+    hint = _REMEDIATION_HINTS.get(code)
+    if hint:
+        message = f"{message}\n{hint}"
+    return click.ClickException(message)
+
+
 def _persist_run_safely(**kwargs):
     try:
         return sessions.record_run(**kwargs)
@@ -123,9 +144,8 @@ def catalog(as_json: bool) -> None:
 
     contract = build_catalog_contract(raw, config)
     if contract.get("status") != STATUS_OK:
-        code = contract.get("error_code") or "CATALOG_UNAVAILABLE"
-        raise click.ClickException(
-            f"{code}: {contract.get('error') or 'could not load the query catalog'}"
+        raise _hard_error(
+            contract, "CATALOG_UNAVAILABLE", "could not load the query catalog"
         )
     render(
         Result(json_payload=contract, human=lambda: _format_catalog(contract)),
@@ -219,7 +239,4 @@ def plan(plan_json: str | None, plan_file: str | None, as_json: bool) -> None:
 
         render(Result(json_payload=contract, human=_human_invalid), as_json=as_json)
     else:
-        code = contract.get("error_code") or "PLAN_FAILED"
-        raise click.ClickException(
-            f"{code}: {contract.get('error') or 'plan execution failed'}"
-        )
+        raise _hard_error(contract, "PLAN_FAILED", "plan execution failed")

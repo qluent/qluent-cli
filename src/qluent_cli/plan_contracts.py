@@ -25,9 +25,10 @@ STATUS_OK = "ok"
 STATUS_PLAN_INVALID = "plan_invalid"
 STATUS_ERROR = "error"
 
-_REPAIRABLE_ERROR_CODES = frozenset(
-    {"PLAN_INVALID", "PLAN_SCOPE_VIOLATION", "QUERY_CATALOG_INVALID"}
-)
+# Only codes the caller can actually act on by editing the plan. A broken
+# catalog (QUERY_CATALOG_INVALID) is deliberately absent: no plan compiles
+# against a catalog that fails to load, so repairing the plan is wasted work.
+_REPAIRABLE_ERROR_CODES = frozenset({"PLAN_INVALID", "PLAN_SCOPE_VIOLATION"})
 
 
 class PlanContract(TypedDict, total=False):

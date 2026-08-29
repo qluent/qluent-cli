@@ -53,3 +53,25 @@ For local development only, you can allow insecure `http://` download URLs with:
 ```bash
 QLUENT_CLI_ALLOW_INSECURE_DOWNLOAD=1 npm install -g @qluent/cli
 ```
+
+## Troubleshooting: `qluent --version` shows an older version
+
+`npm install -g @qluent/cli` can succeed while a different `qluent` earlier on
+`PATH` (a `uv tool` install, a distro package) keeps winning. The installer
+warns when it detects this and prints both paths and versions. To confirm:
+
+```bash
+which -a qluent
+```
+
+Two common causes:
+
+- **Shell command hashing.** bash/zsh cache the resolved path, so a shell that
+  ran `qluent` before the install keeps using the old one. Run `hash -r`
+  (bash) or `rehash` (zsh), or start a new shell.
+- **Node version managers.** With fnm/nvm/volta, npm's global bin lives under
+  the *active node version* and is injected per shell, so the CLI disappears
+  from `PATH` after a node upgrade or in shells started without that
+  environment.
+
+Set `QLUENT_SKIP_PATH_CHECK=1` to skip the check during install.

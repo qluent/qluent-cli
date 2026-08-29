@@ -13,6 +13,7 @@
   "files": [
     "bin/qluent.js",
     "lib/installer.js",
+    "lib/shadow-check.js",
     "install.js",
     "README.md"
   ],

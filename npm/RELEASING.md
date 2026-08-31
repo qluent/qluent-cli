@@ -97,6 +97,12 @@ Two consequences to keep in mind:
 Provenance attestations are generated automatically under trusted publishing;
 the `--provenance` flag is not needed and is deliberately absent.
 
+Provenance also imposes a requirement on the manifest: `repository.url` in
+`npm/package.json` must match the repository the OIDC token was issued for, or
+the registry rejects the upload with a 422 after the binaries have already been
+built, signed and released. `npm/tests/package-manifest.test.js` pins that
+field so the failure surfaces on a PR rather than mid-release.
+
 To reconfigure it: npmjs.com → the `@qluent/cli` package → Settings → Trusted
 Publisher → GitHub Actions.
 

@@ -3,6 +3,11 @@
   "version": "0.1.19",
   "description": "Install the Qluent CLI",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qluent/qluent-cli.git",
+    "directory": "npm"
+  },
   "bin": {
     "qluent": "bin/qluent.js"
   },

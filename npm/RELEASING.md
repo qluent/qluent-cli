@@ -28,6 +28,22 @@ which runs three jobs in order:
 `npm-publish` `needs: release`, which is the point: the package can never be
 published pointing at a GitHub Release that does not exist yet.
 
+## Prereleases
+
+A tag with a prerelease suffix — `v0.1.21-rc1` — runs **build** and **release**
+and then stops. It is marked as a prerelease on GitHub so it never displays as
+the latest release, and `npm-publish` is skipped: `npm publish` would tag it
+`latest` and serve it to every plain `npm install`, and a published npm version
+cannot be taken back.
+
+That makes a prerelease tag the way to exercise the release path end to end
+without touching the registry — worth doing after changing anything in the
+`release` job, whose actions are otherwise first executed during a real release.
+
+The tag does not have to be on `main`. Branch, `make bump VERSION=0.1.21-rc1`,
+commit, tag that commit and push only the tag; `main` keeps its version. Delete
+the tag, the prerelease and the branch afterwards.
+
 ## Version manifests
 
 The version lives in four files. Never edit them by hand:

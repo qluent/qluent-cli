@@ -12,17 +12,21 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
+      # Every target the npm installer can resolve in lib/installer.js must be
+      # built here. A missing target is invisible until a user on that platform
+      # runs `npm install -g @qluent/cli` and postinstall 404s.
       matrix:
         include:
           - os: macos-14
-            python-version: "3.11"
-            artifact-pattern: "qluent-darwin-*"
+            artifact-pattern: "qluent-darwin-arm64*"
+          - os: macos-13
+            artifact-pattern: "qluent-darwin-x64*"
           - os: ubuntu-latest
-            python-version: "3.11"
-            artifact-pattern: "qluent-linux-*"
+            artifact-pattern: "qluent-linux-x64*"
+          - os: ubuntu-24.04-arm
+            artifact-pattern: "qluent-linux-arm64*"
           - os: windows-latest
-            python-version: "3.11"
-            artifact-pattern: "qluent-windows-*"
+            artifact-pattern: "qluent-windows-x64*"
 
     runs-on: ${{ matrix.os }}
 
@@ -31,7 +35,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.11"
 
       - name: Install build dependencies
         run: python -m pip install -e .[build]
@@ -55,15 +59,38 @@ jobs:
       contents: write
 
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      - name: Verify the tag matches the committed version
+        run: python3 scripts/bump_version.py --check "${GITHUB_REF_NAME#v}"
+
+      - name: Verify every platform artifact is present
+        run: |
+          missing=0
+          for artifact in \
+            qluent-darwin-arm64 \
+            qluent-darwin-x64 \
+            qluent-linux-x64 \
+            qluent-linux-arm64 \
+            qluent-windows-x64.exe
+          do
+            if [ ! -f "release-assets/$artifact" ]; then
+              echo "::error::Missing release artifact: $artifact"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          echo "All 5 platform artifacts present."
 
       - name: Install signing dependencies
         run: python -m pip install "cryptography>=43.0"
@@ -101,3 +128,53 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: release-assets/*
           generate_release_notes: true
+
+  npm-publish:
+    # The installer downloads from the GitHub release, so the release must
+    # exist before the package that points at it is published. Ordering this
+    # after `release` is what makes an unresolvable install impossible.
+    #
+    # Publishing uses npm trusted publishing (OIDC): there is no npm token.
+    # npmjs.com trusts this repository and THIS WORKFLOW FILENAME, so renaming
+    # this file breaks publishing until the trusted publisher is updated. That
+    # binding is also why the job lives here rather than in its own workflow —
+    # a separate file could not express `needs: release`.
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Verify the tag matches the package version
+        working-directory: npm
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg_version="$(node -p "require('./package.json').version")"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match npm/package.json version $pkg_version"
+            exit 1
+          fi
+          echo "Publishing @qluent/cli@$pkg_version"
+
+      - name: Run installer tests
+        working-directory: npm
+        run: npm test
+
+      # No token and no --provenance: trusted publishing authenticates over
+      # OIDC and attaches provenance attestations automatically.
+      - name: Publish to npm
+        working-directory: npm
+        run: npm publish --access public

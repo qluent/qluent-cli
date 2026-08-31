@@ -133,6 +133,9 @@ jobs:
           tag_name: ${{ github.ref_name }}
           files: release-assets/*
           generate_release_notes: true
+          # A tag carrying a prerelease suffix (v0.1.21-rc1) is marked as such,
+          # so it never shows as the repository's latest release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
   npm-publish:
     # The installer downloads from the GitHub release, so the release must
@@ -144,7 +147,12 @@ jobs:
     # this file breaks publishing until the trusted publisher is updated. That
     # binding is also why the job lives here rather than in its own workflow —
     # a separate file could not express `needs: release`.
-    if: startsWith(github.ref, 'refs/tags/v')
+    #
+    # Prerelease tags stop here. `npm publish` would tag the prerelease as
+    # `latest` and serve it to every plain `npm install`, and a published npm
+    # version cannot be taken back. A prerelease tag therefore exercises the
+    # build and release path and leaves the registry alone.
+    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     needs: release
     runs-on: ubuntu-latest
     permissions:

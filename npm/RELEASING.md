@@ -51,13 +51,20 @@ platform and nowhere else:
 | Artifact | Runner |
 | --- | --- |
 | `qluent-darwin-arm64` | `macos-14` |
-| `qluent-darwin-x64` | `macos-13` |
+| `qluent-darwin-x64` | `macos-15-intel` |
 | `qluent-linux-x64` | `ubuntu-latest` |
 | `qluent-linux-arm64` | `ubuntu-24.04-arm` |
 | `qluent-windows-x64.exe` | `windows-latest` |
 
 The release job hard-fails on a missing artifact rather than publishing a
 partial release.
+
+Runner labels are load-bearing and they expire. A label that no longer exists
+does not fail the build — it queues until GitHub gives up, which is how the
+retired `macos-13` image silently stalled the first 0.1.19 attempt. The build
+job carries a 30-minute timeout so that shows up as a failure. GitHub drops
+x86_64 macOS entirely when the macOS 15 image retires in Fall 2027; after that,
+`qluent-darwin-x64` needs cross-compilation under Rosetta on an arm64 runner.
 
 Final URLs, for `v0.1.19`:
 

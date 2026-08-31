@@ -19,7 +19,11 @@ jobs:
         include:
           - os: macos-14
             artifact-pattern: "qluent-darwin-arm64*"
-          - os: macos-13
+          # Intel macOS. `macos-13` was retired in December 2025; this label
+          # is the supported x86_64 image and is available until August 2027,
+          # after which GitHub drops x86_64 macOS entirely and darwin-x64 will
+          # need cross-compilation under Rosetta on an arm64 runner.
+          - os: macos-15-intel
             artifact-pattern: "qluent-darwin-x64*"
           - os: ubuntu-latest
             artifact-pattern: "qluent-linux-x64*"
@@ -29,6 +33,7 @@ jobs:
             artifact-pattern: "qluent-windows-x64*"
 
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4

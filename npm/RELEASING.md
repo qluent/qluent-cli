@@ -59,6 +59,11 @@ platform and nowhere else:
 The release job hard-fails on a missing artifact rather than publishing a
 partial release.
 
+Action versions are load-bearing too. Most actions publish a floating major
+tag (`@v7`), but not all do — `astral-sh/setup-uv` stopped after `v7`, so it is
+pinned to an exact version. A tag that does not resolve fails the job outright,
+which is at least loud.
+
 Runner labels are load-bearing and they expire. A label that no longer exists
 does not fail the build — it queues until GitHub gives up, which is how the
 retired `macos-13` image silently stalled the first 0.1.19 attempt. The build

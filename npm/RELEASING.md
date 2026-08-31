@@ -22,7 +22,8 @@ which runs three jobs in order:
    five platform artifacts are present, signs the checksums, and publishes the
    GitHub Release.
 3. **npm-publish** — re-verifies the tag against `package.json`, runs the
-   installer tests, and publishes `@qluent/cli` with provenance.
+   installer tests, and publishes `@qluent/cli` over OIDC trusted publishing,
+   which attaches provenance automatically.
 
 `npm-publish` `needs: release`, which is the point: the package can never be
 published pointing at a GitHub Release that does not exist yet.
@@ -69,12 +70,39 @@ https://github.com/qluent/qluent-cli/releases/download/v0.1.19/qluent-darwin-arm
 The npm installer verifies each downloaded binary against its checksum sidecar
 and its Ed25519 signature before installing.
 
-## Required secrets
+## Authentication
+
+### npm: trusted publishing, not a token
+
+`npm-publish` authenticates over OIDC. There is no npm token in this repo, and
+there is nothing to rotate or leak. npmjs.com is configured to trust exactly one
+workflow in one repository, so a stolen GitHub secret cannot publish `@qluent/cli`
+from anywhere else.
+
+Two consequences to keep in mind:
+
+- **The workflow filename is load-bearing.** The trusted publisher is registered
+  against `qluent-cli-binaries.yml`. Renaming that file breaks publishing until
+  the setting on npmjs.com is updated to match.
+- **npm must be >= 11.5.1 and Node >= 22.14.0.** Node 22 still bundles npm 10,
+  so the job upgrades npm explicitly before publishing.
+
+Provenance attestations are generated automatically under trusted publishing;
+the `--provenance` flag is not needed and is deliberately absent.
+
+To reconfigure it: npmjs.com → the `@qluent/cli` package → Settings → Trusted
+Publisher → GitHub Actions, with organization `qluent`, repository `qluent-cli`,
+workflow filename `qluent-cli-binaries.yml`, and no environment. Only
+GitHub-hosted runners are supported, and a package can have one trusted
+publisher at a time.
+
+### GitHub Actions secrets
 
 | Secret | Used by | Purpose |
 | --- | --- | --- |
 | `QLUENT_SIGNING_PRIVATE_KEY` | `release` | Ed25519 PEM key that signs the checksum sidecars |
-| `NPM_TOKEN` | `npm-publish` | npm granular automation token with publish rights on `@qluent` |
+
+That is the only secret this repo needs.
 
 ## Releasing the plugin
 

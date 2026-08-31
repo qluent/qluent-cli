@@ -133,6 +133,12 @@ jobs:
     # The installer downloads from the GitHub release, so the release must
     # exist before the package that points at it is published. Ordering this
     # after `release` is what makes an unresolvable install impossible.
+    #
+    # Publishing uses npm trusted publishing (OIDC): there is no npm token.
+    # npmjs.com trusts this repository and THIS WORKFLOW FILENAME, so renaming
+    # this file breaks publishing until the trusted publisher is updated. That
+    # binding is also why the job lives here rather than in its own workflow —
+    # a separate file could not express `needs: release`.
     if: startsWith(github.ref, 'refs/tags/v')
     needs: release
     runs-on: ubuntu-latest
@@ -147,6 +153,10 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 still bundles npm 10.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
 
       - name: Verify the tag matches the package version
         working-directory: npm
@@ -163,8 +173,8 @@ jobs:
         working-directory: npm
         run: npm test
 
+      # No token and no --provenance: trusted publishing authenticates over
+      # OIDC and attaches provenance attestations automatically.
       - name: Publish to npm
         working-directory: npm
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public

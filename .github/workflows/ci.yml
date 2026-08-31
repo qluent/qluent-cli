@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Verify version manifests are in sync
+        run: python scripts/bump_version.py --check
+
+      - name: Run pytest
+        run: uv run pytest -q
+
+  npm:
+    name: npm installer tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run installer tests
+        working-directory: npm
+        run: npm test
+
+  build:
+    name: Binary builds cleanly
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # A PyInstaller build that only breaks at tag time blocks a release at
+      # the worst moment. One cheap native build per PR catches it earlier.
+      - name: Install build dependencies
+        run: python -m pip install -e .[build]
+
+      - name: Build standalone binary
+        run: python -m qluent_cli.build_binary
+
+      - name: Smoke the built binary
+        run: ./dist/binaries/qluent-linux-x64 --version

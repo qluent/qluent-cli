@@ -7,10 +7,10 @@ This package is a thin npm installer for the platform-specific `qluent` binary.
 Releasing is one command from a clean `main`:
 
 ```bash
-make bump VERSION=0.1.19     # rewrites all four manifests
-git commit -am "Release 0.1.19"
+make bump VERSION=0.1.21     # rewrites all four manifests
+git commit -am "Release 0.1.21"
 # open a PR, merge it, pull main, then:
-make release VERSION=0.1.19  # verifies, tests, tags, pushes
+make release VERSION=0.1.21  # verifies, tests, tags, pushes
 ```
 
 Pushing the `v*` tag triggers
@@ -71,12 +71,12 @@ job carries a 30-minute timeout so that shows up as a failure. GitHub drops
 x86_64 macOS entirely when the macOS 15 image retires in Fall 2027; after that,
 `qluent-darwin-x64` needs cross-compilation under Rosetta on an arm64 runner.
 
-Final URLs, for `v0.1.19`:
+Final URLs, for `v0.1.21`:
 
 ```text
-https://github.com/qluent/qluent-cli/releases/download/v0.1.19/qluent-darwin-arm64
-https://github.com/qluent/qluent-cli/releases/download/v0.1.19/qluent-darwin-arm64.sha256
-https://github.com/qluent/qluent-cli/releases/download/v0.1.19/qluent-darwin-arm64.sha256.sig
+https://github.com/qluent/qluent-cli/releases/download/v0.1.21/qluent-darwin-arm64
+https://github.com/qluent/qluent-cli/releases/download/v0.1.21/qluent-darwin-arm64.sha256
+https://github.com/qluent/qluent-cli/releases/download/v0.1.21/qluent-darwin-arm64.sha256.sig
 ```
 
 The npm installer verifies each downloaded binary against its checksum sidecar
@@ -215,7 +215,7 @@ the Actions UI. No version bump needed.
 version and roll forward with a patch release:
 
 ```bash
-npm deprecate @qluent/cli@0.1.19 "Broken build, use 0.1.20"
+npm deprecate @qluent/cli@0.1.21 "Broken build, use 0.1.22"
 ```
 
 The npm package version and the release tag are always equal, verified twice in

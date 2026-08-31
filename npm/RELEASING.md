@@ -91,9 +91,22 @@ Provenance attestations are generated automatically under trusted publishing;
 the `--provenance` flag is not needed and is deliberately absent.
 
 To reconfigure it: npmjs.com → the `@qluent/cli` package → Settings → Trusted
-Publisher → GitHub Actions, with organization `qluent`, repository `qluent-cli`,
-workflow filename `qluent-cli-binaries.yml`, and no environment. Only
-GitHub-hosted runners are supported, and a package can have one trusted
+Publisher → GitHub Actions.
+
+| Field | Value |
+| --- | --- |
+| Publisher | GitHub Actions |
+| Organization or user | `qluent` |
+| Repository | `qluent-cli` |
+| Workflow filename | `qluent-cli-binaries.yml` |
+| Environment name | *(empty)* |
+| Allowed actions | **Allow `npm publish`** only |
+
+Leave `Allow npm stage publish` unchecked: the workflow runs a plain
+`npm publish`, and granting only what it actually does is the same reasoning
+that made trusted publishing preferable to a token.
+
+Only GitHub-hosted runners are supported, and a package can have one trusted
 publisher at a time.
 
 ### GitHub Actions secrets

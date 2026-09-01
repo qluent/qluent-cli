@@ -123,6 +123,7 @@ class FakeClient:
             "question": question,
             "explanation": "Answer.",
             "sql": "SELECT 1",
+            "plan": {"source": "orders", "group_by": ["a"]},
             "data": [{"a": 1}],
             "columns": ["a"],
             "row_count": 1,
@@ -396,6 +397,9 @@ def test_dispatch_query_returns_contract_and_forwards_thread_id():
     assert result["answer"] == "Answer."
     assert result["sql"] == "SELECT 1"
     assert result["thread_id"] == "th_1"
+    # The executed plan rides the contract through to the tool result, so the
+    # agent can re-run a corrected version via qluent_compose_query.
+    assert result["plan"] == {"source": "orders", "group_by": ["a"]}
 
 
 def test_dispatch_suggestions_filters_by_tree_id():

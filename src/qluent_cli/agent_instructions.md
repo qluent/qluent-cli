@@ -152,6 +152,11 @@ Rules:
 - Reuse `thread_id` for follow-up questions that build on the same result.
 - Verify the returned `sql` matches the user's intent before presenting numbers, and
   present the numbers as coming from an ad-hoc query, never as deterministic tree evidence.
+- When the response carries a `plan`, that is the QueryPlan the backend compiled for the
+  question. Review it instead of re-authoring one: it is a QueryPlan document, so a
+  corrected version goes straight back through `qluent plan --file <path> --json-output`
+  and re-runs deterministically. A `plan` of `null` just means this project does not
+  compile queries through a plan — fall back to reviewing the `sql`.
 - Never use `qluent query` to re-derive numbers a tree command already returned.
 
 ## Manual root cause analysis workflow

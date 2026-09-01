@@ -48,6 +48,7 @@ class QueryContract(TypedDict, total=False):
     google_sheets_url: str | None
     thread_id: str | None
     message_id: str | None
+    plan: dict[str, Any] | None
     clarification: QueryClarification | None
     error_code: str | None
     error: str | None
@@ -70,6 +71,21 @@ def _normalize_clarification(
             "options": list(nested.get("options") or nested.get("questions") or []),
         }
     return None
+
+
+def _normalize_plan(raw: dict[str, Any]) -> dict[str, Any] | None:
+    """The QueryPlan the backend compiled and executed for this question.
+
+    Present only on ``plan_compile`` projects, and only on success. It is
+    carried through verbatim — the same document ``qluent plan`` accepts — so
+    an agent can review the plan behind an answer and re-run a corrected
+    version deterministically. Anything that is not a JSON object is dropped
+    rather than passed on as an unusable ``plan``.
+    """
+    plan = raw.get("plan")
+    if plan is None:
+        plan = raw.get("query_plan")
+    return plan if isinstance(plan, dict) else None
 
 
 def _derive_status(raw: dict[str, Any], clarification: QueryClarification | None) -> str:
@@ -137,6 +153,7 @@ def build_query_contract(
         "google_sheets_url": raw.get("google_sheets_url"),
         "thread_id": raw.get("thread_id"),
         "message_id": raw.get("message_id"),
+        "plan": _normalize_plan(raw),
         "clarification": clarification,
         "error_code": raw.get("error_code"),
         "error": raw.get("error"),

@@ -672,7 +672,7 @@ wheels = [
 
 [[package]]
 name = "qluent-cli"
-version = "0.1.20"
+version = "0.1.21"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
@@ -696,7 +696,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.0" },
     { name = "cryptography", marker = "extra == 'build'", specifier = ">=43.0" },
     { name = "httpx", specifier = ">=0.25" },
-    { name = "mcp", specifier = ">=1.0" },
+    { name = "mcp", specifier = ">=1.27,<2" },
     { name = "pyinstaller", marker = "extra == 'build'", specifier = ">=6.0" },
 ]
 provides-extras = ["build"]

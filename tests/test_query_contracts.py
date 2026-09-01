@@ -46,6 +46,60 @@ def test_sync_success_normalizes_explanation_to_answer():
     assert contract["provenance"]["source"] == "nl_query"
 
 
+def test_sync_success_carries_executed_plan_verbatim():
+    plan = {
+        "source": "orders",
+        "filter_by": [{"column": "region", "op": "in", "values": ["EU"]}],
+        "group_by": ["brand"],
+        "metrics": ["revenue"],
+    }
+    raw = {
+        "success": True,
+        "question": "revenue by brand in the EU?",
+        "sql": "SELECT 1",
+        "plan": plan,
+        "data": [],
+        "columns": [],
+        "row_count": 0,
+    }
+
+    contract = build_query_contract(raw, CONFIG)
+
+    # Verbatim: the contract's plan is the document `qluent plan --file` takes.
+    assert contract["plan"] == plan
+
+
+def test_plan_absent_or_malformed_is_none():
+    base = {"success": True, "question": "q", "data": [], "row_count": 0}
+
+    assert build_query_contract(base, CONFIG)["plan"] is None
+    assert build_query_contract({**base, "plan": None}, CONFIG)["plan"] is None
+    assert build_query_contract({**base, "plan": "SELECT 1"}, CONFIG)["plan"] is None
+
+
+def test_plan_falls_back_to_query_plan_key():
+    raw = {"success": True, "question": "q", "query_plan": {"source": "orders"}}
+
+    assert build_query_contract(raw, CONFIG)["plan"] == {"source": "orders"}
+
+
+def test_stream_result_event_carries_plan():
+    raw = {
+        "success": True,
+        "thread_id": "th_5",
+        "question": "q",
+        "explanation": "Answer.",
+        "plan": {"source": "orders", "group_by": ["brand"]},
+        "data": [],
+        "columns": [],
+        "row_count": 0,
+    }
+
+    contract = build_query_contract(raw, CONFIG, event="result", sql="SELECT 2")
+
+    assert contract["plan"] == {"source": "orders", "group_by": ["brand"]}
+
+
 def test_sync_truncation_derived_from_row_count():
     raw = {
         "success": True,

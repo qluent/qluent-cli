@@ -21,8 +21,26 @@ def _config(**overrides: Any) -> QluentConfig:
     return QluentConfig(**defaults)
 
 
+# The QueryPlan the backend compiled for the question, as it rides the NL query
+# response on a plan_compile project. Shaped like the documents `qluent plan`
+# accepts (see tests/test_plan.py).
+EXECUTED_PLAN = {
+    "nodes": [
+        {"op": "source", "id": "src", "base": "orders"},
+        {
+            "op": "group_by",
+            "id": "g",
+            "input": "src",
+            "dims": ["customer"],
+            "metrics": ["revenue"],
+        },
+    ],
+    "output": "g",
+}
+
 RESULT_EVENT = {
     "success": True,
+    "plan": EXECUTED_PLAN,
     "thread_id": "th_1",
     "message_id": "msg_1",
     "question": "top customers?",
@@ -118,6 +136,45 @@ def test_query_json_output_emits_contract(monkeypatch, isolated_config):
     assert payload["deterministic"] is False
     assert payload["sql"] == "SELECT 1"
     assert payload["answer"] == "Acme leads on revenue."
+    assert payload["plan"] == EXECUTED_PLAN
+
+
+def test_query_plan_round_trips_into_the_plan_command(monkeypatch, isolated_config):
+    """The emitted plan is a document `qluent plan --file` takes unchanged."""
+    FakeStreamingClient.events = [("result", dict(RESULT_EVENT))]
+    _wire(monkeypatch, FakeStreamingClient)
+
+    runner = CliRunner()
+    emitted = json.loads(
+        runner.invoke(cli, ["query", "top customers?", "--json-output"]).stdout
+    )["plan"]
+
+    executed: list[dict[str, Any]] = []
+
+    class FakePlanClient:
+        def __init__(self, config: QluentConfig) -> None:
+            self.config = config
+
+        def execute_plan(self, plan, *, progress_callback=None):
+            executed.append(plan)
+            return {
+                "success": True,
+                "sql": "SELECT 1",
+                "rows": [{"customer": "Acme", "revenue": 120340}],
+                "row_count": 1,
+                "metadata": {"columns": ["customer", "revenue"]},
+            }
+
+    monkeypatch.setattr("qluent_cli.plan.load_config", lambda: _config())
+    monkeypatch.setattr("qluent_cli.plan.QluentClient", FakePlanClient)
+
+    with runner.isolated_filesystem():
+        with open("plan.json", "w") as handle:
+            json.dump(emitted, handle)
+        result = runner.invoke(cli, ["plan", "--file", "plan.json", "--json-output"])
+
+    assert result.exit_code == 0, result.output
+    assert executed == [EXECUTED_PLAN]
 
 
 def test_query_clarification_renders_options_and_exits_zero(

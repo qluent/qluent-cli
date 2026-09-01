@@ -258,7 +258,10 @@ def _tool_definitions() -> list[dict[str, Any]]:
                 "may take minutes. Use for row-level or arbitrary questions not covered by "
                 "metric trees; prefer the deterministic tree tools when one fits. Pass "
                 "thread_id from a previous result to follow up or answer a clarification "
-                "(status = clarification_needed)."
+                "(status = clarification_needed). When the result carries a 'plan', that "
+                "is the QueryPlan the backend compiled for the question — review it and "
+                "send a corrected version to qluent_compose_query to re-run it "
+                "deterministically."
             ),
             "inputSchema": {
                 "type": "object",

@@ -1,13 +1,13 @@
 [project]
 name = "qluent-cli"
-version = "0.1.20"
+version = "0.1.21"
 description = "CLI for Qluent metric tree analysis"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",
     "httpx>=0.25",
-    "mcp>=1.0",
+    "mcp>=1.27,<2",
 ]
 
 [project.optional-dependencies]

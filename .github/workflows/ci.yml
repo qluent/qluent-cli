@@ -51,17 +51,34 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v7
+      - name: Install uv
+        # Pinned exactly: setup-uv stopped publishing floating major tags
+        # after v7, so `@v10` does not resolve.
+        uses: astral-sh/setup-uv@v10.0.1
         with:
-          python-version: "3.11"
+          enable-cache: true
 
       # A PyInstaller build that only breaks at tag time blocks a release at
       # the worst moment. One cheap native build per PR catches it earlier.
+      #
+      # Built from the lockfile rather than a fresh resolve, so the binary is
+      # compiled against the same dependency set the tests ran against. The
+      # explicit --python matches what setup-python pinned before uv took over.
       - name: Install build dependencies
-        run: python -m pip install -e .[build]
+        run: uv sync --frozen --no-dev --extra build --python 3.11
 
       - name: Build standalone binary
-        run: python -m qluent_cli.build_binary
+        run: uv run --frozen --no-dev --extra build python -m qluent_cli.build_binary
 
       - name: Smoke the built binary
         run: ./dist/binaries/qluent-linux-x64 --version
+
+      # `--version` never imports the mcp SDK -- main.py defers that import
+      # into the `mcp serve` body -- so only a real handshake reaches the code
+      # that shipped broken in 0.1.20. It has to run against the packaged
+      # binary: the unit tests exercise the module, not the artifact.
+      - name: Smoke the MCP stdio handshake
+        run: |
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | timeout 30 ./dist/binaries/qluent-linux-x64 mcp serve > handshake.json || true
+          grep -q '"serverInfo"' handshake.json

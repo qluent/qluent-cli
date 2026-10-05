@@ -47,6 +47,10 @@ class FakeClient:
 
     def __init__(self, *_args: Any, **_kwargs: Any) -> None:
         self.calls: list[tuple[str, tuple, dict]] = []
+        self.closed = False
+
+    def close(self):
+        self.closed = True
 
     def list_trees(self) -> dict[str, Any]:
         self.calls.append(("list_trees", (), {}))
@@ -491,6 +495,7 @@ def test_call_tool_handler_returns_setup_errors_as_text(monkeypatch):
     )
     server_result = asyncio.run(call_handler(request))
     call_result = server_result.root
+    assert call_result.isError is True
     assert call_result.content[0].text == "Error: No API key configured."
 
 
@@ -549,3 +554,90 @@ def test_dispatch_compose_query_rejects_non_object_plan():
                 "qluent_compose_query", {"plan": "[1]"}, client=client, config=CONFIG
             )
         )
+
+
+@pytest.mark.parametrize("filters", [{"region": ["EU"]}, ["region=EU"]])
+def test_deep_dive_forwards_filters_and_segments(filters):
+    client = FakeClient()
+    asyncio.run(dispatch_tool(
+        "qluent_deep_dive",
+        {"segment_by": ["region"], "filters": filters},
+        client=client, config=CONFIG,
+    ))
+    kwargs = next(c[2] for c in client.calls if c[0] == "investigate_tree")
+    assert kwargs["segment_by"] == ["region"]
+    assert kwargs["filters"] == {"region": ["EU"]}
+
+
+@pytest.mark.parametrize("fails", [False, True])
+def test_call_tool_closes_http_client_and_marks_failures(monkeypatch, fails):
+    from mcp import types
+
+    client = FakeClient()
+    if fails:
+        def fail():
+            raise RuntimeError("API unavailable")
+        client.list_trees = fail
+    monkeypatch.setattr("qluent_cli.mcp_server.load_config", lambda: CONFIG)
+    monkeypatch.setattr("qluent_cli.mcp_server.QluentClient", lambda config: client)
+    handler = build_server().request_handlers[types.CallToolRequest]
+    result = asyncio.run(handler(types.CallToolRequest(
+        method="tools/call",
+        params=types.CallToolRequestParams(name="qluent_list_trees", arguments={}),
+    ))).root
+    assert result.isError is fails
+    assert client.closed
+    if fails:
+        assert "API unavailable" in result.content[0].text
+
+
+def test_slow_tool_does_not_block_protocol_requests(monkeypatch):
+    import threading
+    from mcp import types
+
+    started = threading.Event()
+    release = threading.Event()
+
+    class SlowClient(FakeClient):
+        def list_trees(self):
+            started.set()
+            if not release.wait(timeout=5):
+                raise RuntimeError("event loop blocked")
+            return TREE_DATA
+
+    monkeypatch.setattr("qluent_cli.mcp_server.load_config", lambda: CONFIG)
+    monkeypatch.setattr("qluent_cli.mcp_server.QluentClient", SlowClient)
+    server = build_server()
+
+    async def check():
+        call = asyncio.create_task(server.request_handlers[types.CallToolRequest](
+            types.CallToolRequest(method="tools/call", params=types.CallToolRequestParams(
+                name="qluent_list_trees", arguments={},
+            ))
+        ))
+        try:
+            assert await asyncio.to_thread(started.wait, 2)
+            result = await asyncio.wait_for(
+                server.request_handlers[types.ListToolsRequest](
+                    types.ListToolsRequest(method="tools/list")
+                ), timeout=1,
+            )
+            assert len(result.root.tools) == len(HANDLERS)
+        finally:
+            release.set()
+        assert (await call).root.isError is False
+
+    asyncio.run(check())
+
+
+def test_stdio_transport_from_cli():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    subprocess.run(
+        [sys.executable, str(root / "scripts" / "mcp_smoke_test.py"),
+         sys.executable, "-m", "qluent_cli.main", "mcp", "serve"],
+        cwd=root, check=True, capture_output=True, text=True, timeout=45,
+    )

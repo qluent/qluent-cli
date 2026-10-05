@@ -10,8 +10,9 @@ divergence from the CLI shape.
 
 from __future__ import annotations
 
+import asyncio
 import json
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 from qluent_cli import __version__
 from qluent_cli.client import QluentClient
@@ -190,7 +191,7 @@ def _tool_definitions() -> list[dict[str, Any]]:
         {
             "name": "qluent_deep_dive",
             "description": (
-                "Run investigations across multiple trees in parallel and return a bundle "
+                "Run investigations across multiple trees and return a bundle "
                 "keyed by tree id. If `tree_ids` is omitted, every tree in the project is used."
             ),
             "inputSchema": {
@@ -345,25 +346,25 @@ def _tool_definitions() -> list[dict[str, Any]]:
     ]
 
 
-ToolHandler = Callable[[QluentClient, QluentConfig, dict[str, Any]], Awaitable[dict[str, Any]]]
+ToolHandler = Callable[[QluentClient, QluentConfig, dict[str, Any]], dict[str, Any]]
 
 
-async def _list_trees(client: QluentClient, _config: QluentConfig, _args: dict[str, Any]) -> dict[str, Any]:
+def _list_trees(client: QluentClient, _config: QluentConfig, _args: dict[str, Any]) -> dict[str, Any]:
     return client.list_trees()
 
 
-async def _get_tree(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+def _get_tree(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     return client.get_tree(args["tree_id"])
 
 
-async def _evaluate(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+def _evaluate(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
     return client.evaluate_tree(args["tree_id"], c_from, c_to, p_from, p_to)
 
 
-async def _investigate(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+def _investigate(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
@@ -387,7 +388,7 @@ async def _investigate(client: QluentClient, _config: QluentConfig, args: dict[s
     )
 
 
-async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
@@ -421,6 +422,8 @@ async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str
                 trend_periods=int(args.get("trend_periods", 4)),
                 trend_grain=str(args.get("trend_grain", "week")),
                 trend_as_of=args.get("trend_as_of"),
+                segment_by=list(args.get("segment_by") or []),
+                filters=_filters_from_arg(args.get("filters")),
                 max_depth=int(args.get("max_depth", 3)),
                 max_branching=int(args.get("max_branches", 2)),
                 max_segments=int(args.get("max_segments", 5)),
@@ -442,7 +445,7 @@ async def _deep_dive(client: QluentClient, _config: QluentConfig, args: dict[str
     }
 
 
-async def _rca_analyze(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+def _rca_analyze(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
@@ -467,7 +470,7 @@ async def _rca_analyze(client: QluentClient, config: QluentConfig, args: dict[st
     )
 
 
-async def _elasticity(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+def _elasticity(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     c_from, c_to, p_from, p_to = _resolve_dates(
         args.get("period"), args.get("current"), args.get("compare")
     )
@@ -486,12 +489,12 @@ async def _elasticity(client: QluentClient, config: QluentConfig, args: dict[str
     )
 
 
-async def _query(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+def _query(client: QluentClient, config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     raw = client.query(args["question"], thread_id=args.get("thread_id"))
     return build_query_contract(raw, config)
 
 
-async def _suggestions(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
+def _suggestions(client: QluentClient, _config: QluentConfig, args: dict[str, Any]) -> dict[str, Any]:
     trees_data = client.list_trees()
     items = build_suggestions(trees_data)
     tree_id = args.get("tree_id")
@@ -500,14 +503,14 @@ async def _suggestions(client: QluentClient, _config: QluentConfig, args: dict[s
     return {"suggestions": items}
 
 
-async def _compose_catalog(
+def _compose_catalog(
     client: QluentClient, config: QluentConfig, _args: dict[str, Any]
 ) -> dict[str, Any]:
     raw = client.get_query_catalog()
     return build_catalog_contract(raw, config)
 
 
-async def _compose_query(
+def _compose_query(
     client: QluentClient, config: QluentConfig, args: dict[str, Any]
 ) -> dict[str, Any]:
     plan = args.get("plan")
@@ -543,7 +546,7 @@ async def dispatch_tool(
     handler = HANDLERS.get(name)
     if handler is None:
         raise ValueError(f"Unknown tool: {name}")
-    return await handler(client, config, arguments or {})
+    return await asyncio.to_thread(handler, client, config, arguments or {})
 
 
 def build_server() -> Any:
@@ -566,18 +569,31 @@ def build_server() -> Any:
     async def _list() -> list[Any]:
         return tools
 
-    @server.call_tool()
-    async def _call(name: str, arguments: dict[str, Any]) -> list[Any]:
+    def execute(name: str, arguments: dict[str, Any]) -> Any:
+        # HTTP calls are synchronous. Keep them off the protocol event loop so
+        # pings, discovery and other requests remain responsive during queries.
         try:
+            handler = HANDLERS.get(name)
+            if handler is None:
+                raise ValueError(f"Unknown tool: {name}")
             config = load_config()
             client = QluentClient(config)
-            payload = await dispatch_tool(name, arguments or {}, client=client, config=config)
-        except SystemExit as exc:
-            message = str(exc) or f"exit {exc.code}"
-            return [types.TextContent(type="text", text=f"Error: {message}")]
-        except Exception as exc:
-            return [types.TextContent(type="text", text=f"Error: {exc}")]
-        return [types.TextContent(type="text", text=json.dumps(payload, indent=2))]
+            try:
+                payload = handler(client, config, arguments or {})
+                content = [types.TextContent(type="text", text=json.dumps(payload, indent=2))]
+            finally:
+                client.close()
+        except (SystemExit, Exception) as exc:
+            message = str(exc) or f"{type(exc).__name__}"
+            return types.CallToolResult(
+                isError=True,
+                content=[types.TextContent(type="text", text=f"Error: {message}")],
+            )
+        return types.CallToolResult(content=content, isError=False)
+
+    @server.call_tool()
+    async def _call(name: str, arguments: dict[str, Any]) -> Any:
+        return await asyncio.to_thread(execute, name, arguments)
 
     return server
 

@@ -101,11 +101,18 @@ full tool reference.
 
 Available tools: `qluent_list_trees`, `qluent_get_tree`, `qluent_evaluate`,
 `qluent_investigate`, `qluent_deep_dive`, `qluent_rca_analyze`,
-`qluent_elasticity`, `qluent_suggestions`.
+`qluent_elasticity`, `qluent_query`, `qluent_compose_catalog`,
+`qluent_compose_query`, `qluent_suggestions`.
 
 The server reuses your `~/.qluent/config.json`, so log in first via
 `qluent login`. Tool outputs are the same JSON contracts the CLI emits with
 `--json-output`.
+
+`qluent setup` and `qluent login` configure API access; register the MCP server
+separately in your agent using the examples below. The agent must be able to find
+`qluent` on its PATH; use an absolute executable path if necessary. Restart or
+reconnect the agent after changing its MCP configuration. Allow a tool timeout
+long enough for multi-minute queries and investigations.
 
 ### Codex CLI (`~/.codex/config.toml`)
 
@@ -113,10 +120,9 @@ The server reuses your `~/.qluent/config.json`, so log in first via
 [mcp_servers.qluent]
 command = "qluent"
 args = ["mcp", "serve"]
-env = { QLUENT_API_KEY = "qk_..." }
 ```
 
-### Cursor (`~/.cursor/mcp.json`) / Continue / Zed
+### Cursor (`~/.cursor/mcp.json`)
 
 ```json
 {
@@ -129,7 +135,15 @@ env = { QLUENT_API_KEY = "qk_..." }
 }
 ```
 
-### Claude Code (`~/.claude/mcp_servers.json`)
+### Claude Code (project `.mcp.json`)
+
+Register the server using the [Claude Code MCP CLI](https://code.claude.com/docs/en/mcp):
+
+```bash
+claude mcp add --transport stdio --scope project qluent -- qluent mcp serve
+```
+
+This creates the following configuration in `.mcp.json` at the project root:
 
 ```json
 {

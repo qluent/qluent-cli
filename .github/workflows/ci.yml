@@ -78,7 +78,4 @@ jobs:
       # that shipped broken in 0.1.20. It has to run against the packaged
       # binary: the unit tests exercise the module, not the artifact.
       - name: Smoke the MCP stdio handshake
-        run: |
-          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
-            | timeout 30 ./dist/binaries/qluent-linux-x64 mcp serve > handshake.json || true
-          grep -q '"serverInfo"' handshake.json
+        run: uv run --frozen --no-dev --extra build python scripts/mcp_smoke_test.py

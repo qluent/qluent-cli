@@ -263,6 +263,10 @@ class QluentClient:
             transport=_build_transport(),
         )
 
+    def close(self) -> None:
+        """Release the HTTP connection pool when a client is no longer needed."""
+        self._client.close()
+
     def _window_body(
         self,
         current_from: str,

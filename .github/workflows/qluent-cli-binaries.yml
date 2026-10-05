@@ -56,6 +56,9 @@ jobs:
       - name: Build standalone binary
         run: uv run --frozen --no-dev --extra build python -m qluent_cli.build_binary
 
+      - name: Smoke the MCP stdio connection
+        run: uv run --frozen --no-dev --extra build python scripts/mcp_smoke_test.py
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v7
         with:

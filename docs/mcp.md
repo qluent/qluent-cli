@@ -23,13 +23,18 @@ The server reuses `~/.qluent/config.json`. Log in first with `qluent login`.
 You can also override via env vars (`QLUENT_API_KEY`, `QLUENT_PROJECT_UUID`,
 `QLUENT_USER_EMAIL`, `QLUENT_API_URL`, `QLUENT_CLIENT_SAFE`).
 
+`qluent setup` and `qluent login` configure API access; register the MCP server
+separately in your agent using the examples below. The agent must be able to find
+`qluent` on its PATH; use an absolute executable path if necessary. Restart or
+reconnect the agent after changing its MCP configuration. Allow a tool timeout
+long enough for multi-minute queries and investigations.
+
 ### Codex CLI (`~/.codex/config.toml`)
 
 ```toml
 [mcp_servers.qluent]
 command = "qluent"
 args = ["mcp", "serve"]
-env = { QLUENT_API_KEY = "qk_..." }
 ```
 
 ### Cursor (`~/.cursor/mcp.json`)
@@ -45,7 +50,15 @@ env = { QLUENT_API_KEY = "qk_..." }
 }
 ```
 
-### Claude Code (`~/.claude/mcp_servers.json`)
+### Claude Code (project `.mcp.json`)
+
+Register the server using the [Claude Code MCP CLI](https://code.claude.com/docs/en/mcp):
+
+```bash
+claude mcp add --transport stdio --scope project qluent -- qluent mcp serve
+```
+
+This creates the following configuration in `.mcp.json` at the project root:
 
 ```json
 {
@@ -60,7 +73,7 @@ env = { QLUENT_API_KEY = "qk_..." }
 
 ## Tools
 
-All tools accept date windows in one of two forms:
+Tools that analyze date windows accept one of two forms:
 
 - `period`: natural-language string (e.g. `"last week"`, `"this month"`,
   `"last 30 days"`). Defaults to `"last 7 days"` when omitted.
@@ -107,8 +120,9 @@ recommended next steps).
 
 ### `qluent_deep_dive`
 
-Run investigations across many trees in parallel and bundle the results,
-keyed by tree id. Same options as `qluent_investigate`, plus:
+Run investigations across many trees sequentially and bundle the results,
+keyed by tree id. Same options as `qluent_investigate` except `tree_id` and
+`compare_trees`, plus:
 
 | Arg | Type | Required |
 |-----|------|----------|
@@ -148,8 +162,26 @@ deterministically from tree metadata.
 |-----|------|----------|
 | `tree_id` | string | optional; filters to one tree |
 
+### `qluent_query`
+
+Ask an ad-hoc natural-language `question` (required string). Optional `thread_id`
+continues an earlier answer or clarification. This invokes the non-deterministic
+NL-to-SQL workflow and can take minutes.
+
+### `qluent_compose_catalog`
+
+Fetch the query catalog and QueryPlan JSON schema. No arguments.
+
+### `qluent_compose_query`
+
+Compile and execute a typed QueryPlan, supplied as the required `plan` object.
+Use the catalog's `plan_schema` to author it. A `plan_invalid` result includes
+repairable errors; adjust the plan and retry.
+
 ## Output shape
 
 Every tool returns a JSON-serialized payload as a single `TextContent` block.
 The payload is the same structure the CLI emits with `--json-output`, so any
-existing parsing logic continues to work over MCP.
+existing parsing logic continues to work over MCP. Setup, validation, and execution
+exceptions return `isError: true` with an error message. Domain statuses such as
+`plan_invalid` remain JSON payloads for callers to interpret.
